@@ -1,5 +1,14 @@
 {
-  "Large Cap": ["RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "ICICIBANK.NS"],
-  "Mid Cap": ["TATAPOWER.NS", "IRCTC.NS", "ZOMATO.NS"],
-  "Indices": ["^NSEI", "^NSEBANK"]
+  "stocks": {
+    "Large Cap": ["RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "ICICIBANK.NS", "KOTAKBANK.NS", "WIPRO.NS", "TATAMOTORS.NS", "BAJFINANCE.NS", "SBIN.NS"],
+    "Mid Cap": ["TATAPOWER.NS", "IRCTC.NS", "ZOMATO.NS", "ADANIPORTS.NS"],
+    "Small Cap": ["IRFC.NS", "RVNL.NS"]
+  },
+  "etfs": {
+    "Equity ETFs": ["NIFTYBEES.NS", "BANKBEES.NS", "JUNIORBEES.NS"],
+    "Commodity ETFs": ["GOLDBEES.NS"]
+  },
+  "indices": {
+    "Benchmark Indices": ["^NSEI", "^NSEBANK", "^BSESN"]
+  }
 }

@@ -40,11 +40,12 @@ To ensure your financial data is secure, the web dashboard is locked natively. W
 
 Once unlocked, you will see a variety of advanced financial metrics:
 
-- **AI Tactical Verdict:** An algorithmic summary of the AI's confidence, expected direction, and current market volatility.
+- **Long-Term Investing Metrics:** Provides essential capital allocation metrics including 5Y CAGR, Sortino Ratio, Historical Value at Risk (VaR), and Distance from 52-Week Highs/Lows.
+- **Advanced Technical Indicators:** Shows the real-time AI inputs for Bollinger Bands, Average True Range (ATR), Stochastic Oscillator, MACD, and RSI.
 - **7-Day Forecast Chart:** Shows the actual historical price line alongside the AI's projected 7-day future path.
-- **SHAP Logic:** A bar chart showing exactly *why* the AI made its decision (e.g., how much weight it put on Moving Averages vs. Volatility).
+- **SHAP Logic:** A bar chart showing exactly *why* the AI made its decision (e.g., how much weight it put on Bollinger Bands vs. Volatility).
 - **Reality Check (Backtest):** Compares how the AI's strategy would have performed over the last 180 days versus just buying and holding the asset.
-- **Monte Carlo Simulation:** A 1,000-path probabilistic simulation of where the price could go over the next 30 days, complete with Black Swan macro stress tests you can toggle on the sidebar (e.g., simulating a 2008 crash).
+- **Monte Carlo Simulation:** A 1,000-path probabilistic simulation of where the price could go over the next year, complete with Black Swan macro stress tests you can toggle on the sidebar (e.g., simulating a 2008 crash).
 
 ## 5. Shutting Down
 
