@@ -18,7 +18,7 @@ warnings.filterwarnings('ignore')
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = os.path.join(BASE_DIR, "data_lake")
 ASSET_FILE = os.path.join(BASE_DIR, "assets.json")
-LOG_FILE  = os.path.join(BASE_DIR, "picks.log")
+LOG_FILE  = os.path.join(BASE_DIR, "logs", "picks.log")
 DB_PATH   = os.path.join(DATA_DIR, "quant.db")
 HYPERPARAMS_FILE = os.path.join(DATA_DIR, "hyperparams.json")
 
@@ -106,7 +106,7 @@ def fetch_and_store(ticker: str, conn: sqlite3.Connection) -> pd.DataFrame | Non
         raw['Low_52W'] = raw['Low'].rolling(252).min()
         raw['Hist_Ghost_Price'] = np.nan
 
-        raw.dropna(inplace=True)
+        raw.dropna(subset=[c for c in raw.columns if c != 'Hist_Ghost_Price'], inplace=True)
         return raw
     except Exception as e:
         print(f"[{ticker}] Fetch error: {e}"); return None

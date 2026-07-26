@@ -89,16 +89,20 @@ pkill -f uvicorn
 # Remove old ready flag to force UI to wait for fresh data
 rm -f "$BASE_DIR/data_lake/.ready"
 
+# Create logs directory
+mkdir -p "$BASE_DIR/logs"
+
 echo -e "\033[0;35mIgniting Backend Shadow Engine & API Server...\033[0m"
-nohup "$BASE_DIR/jarvis_env/bin/python" "$BASE_DIR/stock_market_backend.py" > "$BASE_DIR/backend.log" 2>&1 &
-nohup "$BASE_DIR/jarvis_env/bin/uvicorn" api_server:app --host 0.0.0.0 --port 8000 > "$BASE_DIR/api.log" 2>&1 &
+PYTHONUNBUFFERED=1 nohup "$BASE_DIR/jarvis_env/bin/python" "$BASE_DIR/stock_market_backend.py" > "$BASE_DIR/logs/backend.log" 2>&1 &
+nohup "$BASE_DIR/jarvis_env/bin/uvicorn" api_server:app --host 0.0.0.0 --port 8000 > "$BASE_DIR/logs/api.log" 2>&1 &
 
 sleep 2
 if ! pgrep -f stock_market_backend.py > /dev/null; then
-    echo -e "\033[0;31mERROR: Backend failed to ignite. Check backend.log for details.\033[0m"
-    cat "$BASE_DIR/backend.log"
+    echo -e "\033[0;31mERROR: Backend failed to ignite. Check logs/backend.log for details.\033[0m"
+    cat "$BASE_DIR/logs/backend.log"
     exit 1
 fi
+
 
 # ==========================================
 # PHASE 2: DATA SYNCHRONIZATION
@@ -112,11 +116,11 @@ START_TIME=$(date +%s)
 
 while [ ! -f "$BASE_DIR/data_lake/.ready" ]; do
     if ! pgrep -f stock_market_backend.py > /dev/null; then
-        echo -e "\n\033[0;31mCRITICAL ERROR: Backend process died during sync. Check backend.log.\033[0m"
+        echo -e "\n\033[0;31mCRITICAL ERROR: Backend process died during sync. Check logs/backend.log.\033[0m"
         exit 1
     fi
     
-    PROCESSED=$(grep -c "Syncing 5Y data" "$BASE_DIR/backend.log" 2>/dev/null || echo "0")
+    PROCESSED=$(grep -c "Syncing 5Y data" "$BASE_DIR/logs/backend.log" 2>/dev/null || echo "0")
     
     CURR_TIME=$(date +%s)
     ELAPSED=$((CURR_TIME - START_TIME))

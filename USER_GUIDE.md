@@ -1,138 +1,166 @@
 # Stock Market Predictor: Advanced Researcher Guide
-
-**GitHub Repository:** [mrQhere/stock](https://github.com/mrQhere/stock)
-
-Welcome to the **Stock Market Predictor**. This document serves as the technical manual for operating, tuning, and understanding the mathematical and architectural limits of the platform.
+*Copyright (c) mrQhere - All Rights Reserved*
 
 > [!CAUTION]
-> **RESEARCH PURPOSES ONLY.** This platform provides mathematical probabilities based on historical data. It cannot predict the future. Do not use this tool to make live trading decisions with real capital.
+> **NO SUGAR COATING. RESEARCH PURPOSES ONLY.** 
+> The algorithms presented in this tool—whether it is the XGBoost tree regressor or the PyTorch Long Short-Term Memory (LSTM) network—are mathematical approximations of historical market realities. They are constrained by their training data. **They cannot predict the future.** Black Swan events (like a sudden pandemic, a war, or instantaneous regulatory crackdowns) will absolutely break these models, causing significant financial loss if applied blindly. This tool does not have insider information, it does not guarantee profits, and trading real capital based on these outputs is highly discouraged. Use this strictly as a research terminal to understand market structure.
 
 ---
 
-## Table of Contents
-1. [Why We Built This & Setup Instructions](#1-why-we-built-this--setup-instructions)
-2. [Setting Up Security (Passwords)](#2-setting-up-security-passwords)
-3. [System Architecture & Core Loop](#3-system-architecture--core-loop)
-4. [The Dual AI Engine (LSTM vs XGBoost)](#4-the-dual-ai-engine-lstm-vs-xgboost)
-5. [Factor Analysis & NLP Pipeline](#5-factor-analysis--nlp-pipeline)
-6. [Optuna Hyperparameter Studio](#6-optuna-hyperparameter-studio)
-7. [FastAPI External Access](#7-fastapi-external-access)
-8. [Troubleshooting](#8-troubleshooting)
+## 1. System Architecture: The Dual-Engine Paradigm
+
+The platform operates using a fundamentally decoupled architecture. It relies on a "Shadow Engine" running in the background while the UI reads asynchronously from a central state manager (SQLite).
+
+### 1.1 `stock_market_boot.sh` (The Bootstrapper)
+This Bash script handles the entire lifecycle of the application:
+1. **Zero-Friction Dependency Injection:** It automatically detects OS-level dependencies (`python3-venv`, `build-essential`) and installs them using system package managers (`apt`, `yum`, `pacman`).
+2. **Virtual Environment Isolation:** It builds `jarvis_env/` to isolate PyTorch and XGBoost from your system Python.
+3. **Synchronous Boot Process:** It kills old instances using `pkill -f`, removes the `.ready` file, and launches the backend using `PYTHONUNBUFFERED=1` to ensure real-time log flushing.
+4. **Data Sync UI:** It calculates the `PCT` of tickers processed by grepping `backend.log`. It waits for `.ready` to exist before launching the Streamlit interface.
+
+### 1.2 `stock_market_backend.py` (The Shadow Engine)
+An infinitely looping daemon that processes tickers sequentially:
+- Extracts 5-year OHLCV (Open, High, Low, Close, Volume) data from Yahoo Finance.
+- Computes over 12 Technical Indicators (SMA, EMA, RSI, MACD, Bollinger Bands, ATR, Stochastic Oscillator).
+- Slices the data into a train/holdout set to evaluate XGBoost's real-time accuracy (`Compat` metric).
+- Commits predictions, risk metrics (Max Drawdown, Sharpe), and factor metrics to `quant.db`.
+
+### 1.3 `quant.db` (The SQLite State Manager)
+Instead of passing complex data structures in memory (which leads to memory leaks), the backend writes everything to SQLite. The Streamlit UI only performs `SELECT` queries.
+Tables:
+- `historical_data`: Stores the immediate OHLCV and technical data for charting.
+- `predictions`: A single-row-per-ticker table containing JSON blobs of complex arrays (Monte Carlo paths, LSTM ghost paths).
+- `portfolio_trades`: Tracks user-entered positions.
 
 ---
 
-## 1. Why We Built This & Setup Instructions
+## 2. Advanced Mathematical Models (The Core Intel)
 
-We built the Stock Market Predictor for absolute transparency. Black-box algorithmic trading platforms abstract away their underlying math, leaving researchers unable to verify or tune the predictive models. This platform runs 100% locally on your machine, giving you direct access to the SQLite database, the model weights, and the code driving the analysis.
+The intelligence of this terminal relies on an ensemble of fundamentally different mathematical architectures.
 
-### Setup Instructions
-1. Clone the repository to your local machine.
-2. Ensure you have Python 3.10+ installed.
-3. Make the boot script executable:
-   ```bash
-   chmod +x stock_market_boot.sh
-   ```
-4. Run the boot sequence:
-   ```bash
-   ./stock_market_boot.sh
-   ```
-   *The boot sequence will automatically create a virtual environment, install heavy dependencies (like PyTorch and FastAPI), and launch both the ML background engine and the API server.*
+### 2.1 XGBoost (Extreme Gradient Boosting)
+Tree-based models excel at understanding strict, non-linear thresholds (e.g., "If RSI < 30 AND SMA_50 > SMA_200, then..."). 
+- **Hyperparameter Injection:** The system utilizes parameters generated by the Bayesian optimization studio (`hyperparameter_tuning.py`). Key parameters like `subsample` and `colsample_bytree` are kept below 1.0 to enforce strict regularization, preventing the model from memorizing the noise of standard market chop.
+- **Holdout Set Integrity:** The backend deliberately chops off the most recent 20% of data (or minimum 60 days) to test the newly trained tree on unseen data before trusting its prediction.
 
----
+### 2.2 PyTorch LSTM (Sequence Modeling)
+While XGBoost looks at row-by-row data, the LSTM is given rolling 5-day sequences of data. 
+- **Z-Score Normalization:** The input sequence is entirely stripped of absolute price values. The PyTorch tensor is scaled using `(X - X.mean()) / X.std()`. The LSTM never sees the price of a stock; it only sees the velocity and standard deviation of its movement. This makes the model universally applicable and immune to stock split distortion.
+- **Iterative Autoregression:** The model predicts tomorrow's return, appends that prediction to its own input sequence, drops the oldest day, and predicts the day after. It repeats this 7 times to build the "LSTM Ghost Path".
 
-## 2. Setting Up Security (Passwords)
-
-To prevent unauthorized access to your portfolio and ML data, the UI is gated by an authentication screen. You **must** set a custom password.
-
-1. Ensure the directory `.streamlit` exists in the root folder.
-2. Create or edit the file `.streamlit/secrets.toml`.
-3. Add the following line:
-   ```toml
-   APP_PASSWORD = "your_custom_password_here"
-   ```
-4. Restart the UI. The dashboard will now require this exact password to unlock.
-> *Note:* The `.gitignore` has been strictly configured to prevent `.streamlit/secrets.toml` from being uploaded to GitHub.
+### 2.3 Monte Carlo Block Bootstrap (Risk Assessment)
+Standard financial Monte Carlo models rely on a Gaussian distribution (a bell curve). **This is mathematically dangerous.** Real markets have fat tails (crashes happen much more often than a bell curve predicts).
+- **The Block Method:** Instead of generating random numbers, our `run_block_bootstrap` algorithm randomly selects 5-day contiguous blocks from the actual historical returns of the asset, stitching them together to form a simulated year.
+- **Why it matters:** If an asset experienced a 20% flash crash in its history, that 5-day block remains intact in the simulation pool. This ensures the 5th percentile "Extreme Bad" scenario on your UI accurately reflects the real historical kinetic energy of a crash.
 
 ---
 
-## 3. System Architecture & Core Loop
+## 3. Financial Constraints and Signal Generation
 
-The platform operates as a decoupled, local-first ecosystem:
-- **`stock_market_backend.py` (The Shadow Engine):** An asynchronous daemon that syncs Yahoo Finance data into an embedded SQLite database (`quant.db`), computes 20+ technical indicators, and retrains the ML models on every cycle.
-- **`api_server.py` (The Headless Layer):** A FastAPI server (port 8000) that exposes the SQLite database via REST endpoints.
-- **`stock_market_ui.py` (The Interface):** A multi-tab Streamlit dashboard (port 8501) comprising the deep-dive Terminal, the mass-market Screener, and the Live Portfolio Tracker.
+The terminal employs "Risk Gates" to prevent algorithmic hallucination during macroeconomic crises.
 
----
+### 3.1 The Algorithmic Ceiling (Hold Override)
+A pure mathematical prediction of a 5% gain is useless if the broader market is collapsing. The `generate_signal()` function includes absolute risk overrides:
+1. **Market Mode Penalty:** If the asset is trading below its 200-day SMA, it is in a "BEAR" mode. If it is in a BEAR mode and its historical Sharpe Ratio is negative, **it is mathematically impossible for the system to output a BUY signal.** It will cap the signal at HOLD.
+2. **Catastrophic Drawdown Gate:** If the asset's historical Maximum Drawdown exceeds -20%, it is considered high-volatility/high-risk, and algorithmic optimism is forcibly restrained.
 
-## 4. The Dual AI Engine (LSTM vs XGBoost)
-
-The core forecasting engine relies on an ensemble approach, deliberately pitting a tree-based model against a deep neural network to expose structural biases.
-
-- **XGBoost (Tree-Based):** Excellent at capturing non-linear relationships between specific technical thresholds (e.g., RSI < 30 and MACD crossing). It is highly interpretable via SHAP values.
-- **PyTorch LSTM (Deep Sequence):** A Recurrent Neural Network (RNN) tailored for time-series memory. It analyzes the *sequence* of the last 5 days of normalized price action, ignoring absolute values to focus strictly on kinetic momentum.
-
-> **Researcher Note:** If the XGBoost line and the LSTM line diverge wildly on the interactive chart, it signifies high market ambiguity. The models are disagreeing.
+### 3.2 Sentiment Overlay (NLP)
+The system leverages `vaderSentiment` to parse the headlines of the asset's most recent Yahoo Finance news. It calculates a compound polarity score between -1.0 (Extreme Bearish) and 1.0 (Extreme Bullish). A deeply negative score will veto a technical BUY signal.
 
 ---
 
-## 5. Company Snapshot & NLP Pipeline
+## 4. Setup, Tuning, and Operational Guidelines
 
-The platform does not rely solely on technicals. It incorporates fundamental and alternative data constraints to ensure algorithmic signals are anchored in reality:
-- **NLP Sentiment:** Real-time Yahoo Finance headlines are parsed through `vaderSentiment`. A negative sentiment score acts as a hard mathematical penalty against algorithmic Buy signals. For instance, a technical "Buy" signal will be capped to a "Hold" if the overarching news sentiment is deeply bearish or if the asset is in a historical drawdown cycle exceeding 20%.
-- **Snapshot Metrics:** The system extracts raw company metrics including Market Cap, Price/Book Ratio, and 6M Trailing Momentum. These numbers are purely observational and provide the researcher with immediate context regarding the asset's size and value standing before examining the algorithmic predictions.
+### 4.1 Securing the Platform (Mandatory)
+The platform is gated by a hardcoded authentication mechanism designed for local deployment.
+1. Create the secrets configuration directory: `mkdir -p .streamlit`
+2. Create the file: `nano .streamlit/secrets.toml`
+3. Enter your required application password:
+```toml
+APP_PASSWORD = "your_secure_password"
+```
+4. Restart the terminal. Intrusions will be logged to the Streamlit console.
 
----
-
-## 5b. The Block Bootstrap Engine (Monte Carlo)
-
-The most advanced feature of the UI is its approach to risk simulation. Standard quant models use simple Gaussian random walks, which dangerously underestimate the likelihood of massive market crashes (fat tails). 
-This tool discards the bell curve. It implements a **Historical Block Bootstrap**, drawing random 5-day continuous blocks from the asset's real trading history to build 1,000 possible future paths.
-
-- **Real Crash Simulation:** On the sidebar, you can overlay real historical crashes (e.g., the 2008 Financial Crisis, the 2020 COVID Panic, and the 2022 Rate Hike). 
-- **Dynamic Calibration:** Toggling these scenarios does not just draw a line on the chart; it fundamentally restructures the simulation. The backend blends the return distributions from those exact historical disaster windows into the ticker's probability matrix, dynamically updating the Capital Deployment Scenario tables so you know exactly what your downside risk looks like in a true Black Swan event.
-
----
-
-## 6. Optuna Hyperparameter Studio
-
-Machine learning models decay. To prevent XGBoost from overfitting to obsolete regimes, we built a standalone Bayesian optimization studio.
-
-Run the optimizer in a separate terminal:
+### 4.2 Bayesian Hyperparameter Tuning
+The base `stock_market_backend.py` uses generalized default weights. To extract maximum alpha, you must tune the models to the specific volatility profile of your watched assets.
 ```bash
+# Run this in a dedicated tmux session or terminal window
 source jarvis_env/bin/activate
 python hyperparameter_tuning.py
 ```
-This script aggressively mutates the XGBoost parameters (`learning_rate`, `max_depth`, `subsample`) across thousands of simulated trials. The absolute best mathematical configuration for *each specific ticker* is saved to `data_lake/hyperparams.json`. The main backend engine hot-reloads these optimal parameters seamlessly.
+This module utilizes `Optuna` to run thousands of trials per ticker, finding the optimal learning rates and tree depths. The results are injected directly into `data_lake/hyperparams.json`, which the Shadow Engine will automatically detect and hot-reload on its next 30-minute cycle.
 
 ---
 
-## 7. FastAPI External Access
+## 5. Extensive Troubleshooting Guide (Actual Working Fixes)
 
-For algorithmic traders and researchers building external tools, you do not need to open the UI to access the intelligence.
+This is not a toy. It is a highly multi-threaded data pipeline running local machine learning models. Things will break. Here is exactly how to fix them.
 
-With the boot script running, query the FastAPI server directly:
+### 5.1 System Stuck at "Calculating..." or "Compiling Data: [.] 0%"
+**The Problem:** The terminal relies on `grep`ing the `logs/backend.log` file to calculate the UI loading bar. If the system hangs here permanently, it means the `stock_market_backend.py` daemon is either failing silently on import, or `assets.json` is corrupted.
+**The Fix:** 
+1. Check if the background process is even running: `ps aux | grep stock_market_backend.py`
+2. If it is running, it may be deadlocked in OpenMP (a common PyTorch/XGBoost collision). 
+3. Open `stock_market_boot.sh` and add `OMP_NUM_THREADS=1` to the `nohup` line:
+   ```bash
+   OMP_NUM_THREADS=1 PYTHONUNBUFFERED=1 nohup "$BASE_DIR/jarvis_env/bin/python" ...
+   ```
+4. If it is NOT running, manually execute the script to expose the crash trace:
+   ```bash
+   source jarvis_env/bin/activate
+   python stock_market_backend.py
+   ```
+5. Often, `assets.json` contains a formatting error (e.g., trailing comma). Run `python -c "import json; json.load(open('assets.json'))"` to verify JSON integrity.
+
+### 5.2 UI Says "System is currently syncing..." Forever
+**The Problem:** The boot script finished, but the `predictions` table in `quant.db` is completely empty. The UI refuses to load an empty interface.
+**The Fix:**
+1. This occurs when the `fetch_and_store` function returns `None` for every single ticker in your `assets.json`.
+2. Inspect `logs/picks.log` (`cat logs/picks.log`). If you see `HTTP Error 404` or `Quote not found`, Yahoo Finance has either delisted the asset or temporarily blocked your IP address (Rate Limiting).
+3. If you have customized `assets.json`, ensure you append `.NS` for Indian Equities (e.g., `RELIANCE.NS`), or `.BO` for BSE. US equities do not require suffixes (e.g., `AAPL`).
+4. If the database schema is corrupted, simply delete the SQLite file. The engine will seamlessly recreate it on the next cycle: `rm -f data_lake/quant.db`.
+
+### 5.3 Database Locked / Concurrency Issues
+**The Problem:** `sqlite3.OperationalError: database is locked`. The UI is trying to read data at the exact microsecond the Shadow Engine is executing a bulk `INSERT`.
+**The Fix:** 
+1. The backend operates on an `INSERT OR REPLACE` transaction model designed to be extremely fast. If locks persist, your disk I/O is saturated.
+2. In `stock_market_backend.py`, modify the SQLite connection to utilize Write-Ahead Logging (WAL):
+   ```python
+   conn = sqlite3.connect(DB_PATH)
+   conn.execute('pragma journal_mode=wal')
+   ```
+   WAL mode allows simultaneous readers and writers, completely eliminating database locks.
+
+### 5.4 PyTorch CUDA Out Of Memory (OOM)
+**The Problem:** The LSTM is configured to train for 40 epochs dynamically. If you add 100+ assets to `assets.json`, the sequential training loops can exhaust your system's RAM or VRAM (if CUDA is enabled).
+**The Fix:** 
+1. The boot script intentionally forces CPU-only PyTorch wheels (`--index-url https://download.pytorch.org/whl/cpu`) to guarantee stability on most machines. If you manually installed the GPU version, PyTorch is likely failing to free tensors.
+2. In `train_lstm` within `stock_market_backend.py`, ensure tensors are detached properly if you modified the code. Otherwise, stick to the CPU wheels. 
+3. Lower the `hidden_layer_size` in the `LSTMPredictor` instantiation (e.g., from 50 to 20).
+
+### 5.5 Port Conflicts (Streamlit & FastAPI)
+**The Problem:** `Error: Port 8501 is already in use.`
+**The Fix:** The boot script attempts to forcefully kill old processes (`pkill -f`). If a zombie process survives, you must manually hunt its PID:
 ```bash
-# Get all AI predictions and signals
-curl -H "X-API-Key: your_secure_api_key" http://localhost:8000/api/v1/predictions
-
-# Get deep ML data for a specific asset
-curl -H "X-API-Key: your_secure_api_key" http://localhost:8000/api/v1/asset/AAPL
+# Find the exact process tying up the Streamlit port
+lsof -i :8501
+# Kill it brutally
+kill -9 <PID>
 ```
-*Note: The `X-API-Key` header is strictly enforced for all data endpoints. You must configure `QUANT_API_KEY` in your environment variables for this to function.*
+Repeat for Port 8000 (FastAPI).
 
 ---
 
-## 8. Troubleshooting
+## 6. API Reference (Headless Mode)
 
-### Port Conflicts
-If Streamlit (8501) or FastAPI (8000) fail to bind:
-```bash
-kill -9 $(lsof -t -i:8501)
-kill -9 $(lsof -t -i:8000)
-```
+The system runs a FastAPI server concurrently, allowing programmatic access without loading the graphical Streamlit interface.
 
-### Deep Learning (PyTorch) Memory Leaks
-If the backend crashes with CUDA Out of Memory (OOM) errors during the LSTM training phase, downgrade the `hidden_layer_size` in the `LSTMPredictor` class inside `stock_market_backend.py`.
+### Endpoints
+- `GET /api/v1/predictions`
+  - Returns the master leaderboard and all current AI signals.
+  - **Required Header:** `X-API-Key: {QUANT_API_KEY}`
+- `GET /api/v1/asset/{ticker}`
+  - Returns the exact mathematical breakdown (JSON Blob) for a specific asset, including the 1,000-path Monte Carlo arrays and historical Ghost projections.
+  - **Example Usage:** Integrating the platform's intel into a custom Discord bot or automated trading webhook.
 
-> [!WARNING]
-> **REITERATION OF RISK:** The outputs of this software are mathematical probabilities derived from the past. They do not guarantee future returns. Do not trade real money based on this software.
+*This concludes the technical manual. Trust the math, respect the risk, and never blindly follow an algorithm.*

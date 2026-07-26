@@ -9,10 +9,12 @@ poetry.lock
 
 # Data and Logs
 data_lake/
-*.log
+logs/
 *.sqlite3
 *.db
 *.db-journal
+.ready
+.sync_lock
 
 # Sensitive Info
 .streamlit/secrets.toml
