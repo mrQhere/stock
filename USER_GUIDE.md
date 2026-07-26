@@ -1,138 +1,125 @@
-# Stock Market Predictor: User Guide
+# Stock Market Predictor: Advanced Researcher Guide
 
-Welcome to the **Stock Market Predictor**, an autonomous quantitative analysis engine that tracks assets, trains AI models, and runs Monte Carlo simulations completely locally. 
+Welcome to the **Stock Market Predictor**. This document serves as the technical manual for operating, tuning, and understanding the mathematical and architectural limits of the platform.
 
-This guide provides step-by-step instructions for configuring, running, and understanding the platform.
+> [!CAUTION]
+> **RESEARCH PURPOSES ONLY.** This platform provides mathematical probabilities based on historical data. It cannot predict the future. Do not use this tool to make live trading decisions with real capital.
 
 ---
 
 ## Table of Contents
-1. [Quick Start for First-Time Users](#1-quick-start-for-first-time-users)
-2. [Portfolio Customization](#2-portfolio-customization)
-3. [System Boot & Architecture](#3-system-boot--architecture)
-4. [Security & Access](#4-security--access)
-5. [Dashboard Analytics Breakdown](#5-dashboard-analytics-breakdown)
-6. [Graceful Shutdown](#6-graceful-shutdown)
-7. [Troubleshooting](#7-troubleshooting)
+1. [Why We Built This & Setup Instructions](#1-why-we-built-this--setup-instructions)
+2. [Setting Up Security (Passwords)](#2-setting-up-security-passwords)
+3. [System Architecture & Core Loop](#3-system-architecture--core-loop)
+4. [The Dual AI Engine (LSTM vs XGBoost)](#4-the-dual-ai-engine-lstm-vs-xgboost)
+5. [Factor Analysis & NLP Pipeline](#5-factor-analysis--nlp-pipeline)
+6. [Optuna Hyperparameter Studio](#6-optuna-hyperparameter-studio)
+7. [FastAPI External Access](#7-fastapi-external-access)
+8. [Troubleshooting](#8-troubleshooting)
 
 ---
 
-## 1. Quick Start for First-Time Users
+## 1. Why We Built This & Setup Instructions
 
-If this is your first time using the platform, the fastest way to evaluate the engine is to run it with the default configuration.
+We built the Stock Market Predictor for absolute transparency. Black-box algorithmic trading platforms abstract away their underlying math, leaving researchers unable to verify or tune the predictive models. This platform runs 100% locally on your machine, giving you direct access to the SQLite database, the model weights, and the code driving the analysis.
 
-1. Open your terminal.
-2. Execute the boot script:
+### Setup Instructions
+1. Clone the repository to your local machine.
+2. Ensure you have Python 3.10+ installed.
+3. Make the boot script executable:
+   ```bash
+   chmod +x stock_market_boot.sh
+   ```
+4. Run the boot sequence:
    ```bash
    ./stock_market_boot.sh
    ```
-3. The system will automatically download data for a default set of assets, train the initial AI models, and launch the web dashboard.
-4. Wait for the local URL to appear (usually `http://localhost:8501`) and open it in your browser.
-5. Enter your configured authorization password (see the Security section below on how to set this up).
+   *The boot sequence will automatically create a virtual environment, install heavy dependencies (like PyTorch and FastAPI), and launch both the ML background engine and the API server.*
 
 ---
 
-## 2. Portfolio Customization
+## 2. Setting Up Security (Passwords)
 
-Before running the system against your own portfolio, you must define the target assets in the configuration file.
+To prevent unauthorized access to your portfolio and ML data, the UI is gated by an authentication screen. You **must** set a custom password.
 
-Open `assets.json` and add your Yahoo Finance tickers organized by category.
-
-**Example Configuration:**
-```json
-{
-  "Tech Stocks": ["AAPL", "MSFT", "GOOGL"],
-  "Indices": ["^NSEI", "^GSPC"]
-}
-```
-> **Note:** Ensure you use the exact ticker symbol as it appears on Yahoo Finance (e.g., `^NSEI` for Nifty 50, `RELIANCE.NS` for Indian Equities).
-
----
-
-## 3. System Boot & Architecture
-
-To initiate the analysis pipeline, run the boot script from your terminal:
-```bash
-./stock_market_boot.sh
-```
-
-**Boot Sequence Details:**
-1. **The Shadow Engine:** The script launches the backend data collector as a persistent background process (`nohup`). This engine fetches 5 years of historical data for your assets and trains the XGBoost AI models. It runs continuously in the background, executing an hourly wake-up cycle.
-2. **Vision Deployment:** The script subsequently launches the web dashboard and attaches it directly to your active terminal for monitoring.
-
----
-
-## 4. Security & Access
-
-Once the boot sequence concludes, navigate to the provided Local URL (e.g., `http://localhost:8501`) in your web browser.
-
-### Authentication Lock
-To ensure financial data integrity and privacy, the web dashboard natively requires an authorization code. 
-
-### Password Configuration
-The system uses Streamlit secrets to manage passwords, ensuring no credentials are hardcoded into the source code.
-
-1. Locate the `.streamlit/secrets.toml.example` file in the repository root.
-2. Rename or copy this file to `.streamlit/secrets.toml`.
-3. Open `.streamlit/secrets.toml` in your code editor and set your desired password:
+1. Ensure the directory `.streamlit` exists in the root folder.
+2. Create or edit the file `.streamlit/secrets.toml`.
+3. Add the following line:
    ```toml
-   APP_PASSWORD = "your_secure_password"
+   APP_PASSWORD = "your_custom_password_here"
    ```
-4. Save the file and restart the system. The dashboard will now require this password.
-> **Note:** The `.streamlit/secrets.toml` file is explicitly ignored in `.gitignore` to prevent accidental commits of your password.
+4. Restart the UI. The dashboard will now require this exact password to unlock.
+> *Note:* The `.gitignore` has been strictly configured to prevent `.streamlit/secrets.toml` from being uploaded to GitHub.
 
 ---
 
-## 5. Dashboard Analytics Breakdown
+## 3. System Architecture & Core Loop
 
-Upon successful authentication, the dashboard surfaces a comprehensive suite of quantitative metrics:
-
-- **Long-Term Investing Metrics:** Provides essential capital allocation data including 5Y CAGR, Sortino Ratio, Historical Value at Risk (VaR), and Distance from 52-Week Highs/Lows.
-- **Advanced Technical Indicators:** Displays real-time AI inputs for Bollinger Bands, Average True Range (ATR), Stochastic Oscillator, MACD, and RSI.
-- **7-Day Forecast Chart:** Graphs the actual historical price action against the AI's projected 7-day quantitative path. (Note: This is an autoregressive multi-step forecast bounded by historical volatility—uncertainty compounds with horizon).
-- **SHAP Logic (Explainability):** A feature importance chart detailing exactly how much weight the AI assigned to specific indicators when generating its signal. Model performance is validated against a 60-day holdout dataset, reported as **Holdout R²**.
-- **Reality Check (Backtest):** Compares how the AI's algorithmic strategy would have performed over the last 180 days versus a standard buy-and-hold approach.
-- **Monte Carlo Simulation:** A 1,000-path probabilistic simulation projecting potential price action over the next year. Includes togglable illustrative macroeconomic overlays (e.g., 2008 Crash, Oil Shock) that act as visual stress tests.
+The platform operates as a decoupled, local-first ecosystem:
+- **`stock_market_backend.py` (The Shadow Engine):** An asynchronous daemon that syncs Yahoo Finance data into an embedded SQLite database (`quant.db`), computes 20+ technical indicators, and retrains the ML models on every cycle.
+- **`api_server.py` (The Headless Layer):** A FastAPI server (port 8000) that exposes the SQLite database via REST endpoints.
+- **`stock_market_ui.py` (The Interface):** A multi-tab Streamlit dashboard (port 8501) comprising the deep-dive Terminal, the mass-market Screener, and the Live Portfolio Tracker.
 
 ---
 
-## 6. Graceful Shutdown
+## 4. The Dual AI Engine (LSTM vs XGBoost)
 
-Because the backend runs as a persistent background process, simply closing your terminal window will **not** terminate the data collector.
+The core forecasting engine relies on an ensemble approach, deliberately pitting a tree-based model against a deep neural network to expose structural biases.
 
-To completely halt the platform, press `Ctrl+C` in the terminal to stop the UI, then execute the following command to kill the backend:
-```bash
-pkill -f stock_market_backend.py
-```
+- **XGBoost (Tree-Based):** Excellent at capturing non-linear relationships between specific technical thresholds (e.g., RSI < 30 and MACD crossing). It is highly interpretable via SHAP values.
+- **PyTorch LSTM (Deep Sequence):** A Recurrent Neural Network (RNN) tailored for time-series memory. It analyzes the *sequence* of the last 5 days of normalized price action, ignoring absolute values to focus strictly on kinetic momentum.
+
+> **Researcher Note:** If the XGBoost line and the LSTM line diverge wildly on the interactive chart, it signifies high market ambiguity. The models are disagreeing.
 
 ---
 
-## 7. Troubleshooting
+## 5. Factor Analysis & NLP Pipeline
 
-If you encounter operational issues, consult the standard resolutions below.
+The platform does not rely solely on technicals. It incorporates fundamental and alternative data constraints:
+- **NLP Sentiment:** Real-time Yahoo Finance headlines are parsed through `vaderSentiment`. A negative sentiment score acts as a hard mathematical penalty against algorithmic Buy signals.
+- **Fama-French Exposures:** The system extracts metadata to estimate Size (Market Cap), Value (P/B), and Momentum (6M Trailing Return), anchoring the AI's kinetic predictions in traditional macroeconomic reality.
 
-### Port 8501 Binding Error
-**Symptom:** Streamlit throws an error stating port 8501 is already in use.
-**Cause:** A previous dashboard session is still running in the background.
-**Resolution:**
-```bash
-kill -9 $(lsof -t -i:8501)
-```
+---
 
-### Stale Background Processes
-**Symptom:** The boot script hangs, or background jobs fail to execute correctly.
-**Cause:** Orphaned or corrupted background processes.
-**Resolution:**
-```bash
-pkill -f stock_market_backend.py
-pkill -f stock_market_ui.py
-```
+## 6. Optuna Hyperparameter Studio
 
-### Missing Python Dependencies
-**Symptom:** `ModuleNotFoundError` is thrown during the boot sequence.
-**Cause:** The virtual environment was not activated, or requirements failed to install.
-**Resolution:**
+Machine learning models decay. To prevent XGBoost from overfitting to obsolete regimes, we built a standalone Bayesian optimization studio.
+
+Run the optimizer in a separate terminal:
 ```bash
 source jarvis_env/bin/activate
-pip install -r requirements.txt
+python hyperparameter_tuning.py
 ```
+This script aggressively mutates the XGBoost parameters (`learning_rate`, `max_depth`, `subsample`) across thousands of simulated trials. The absolute best mathematical configuration for *each specific ticker* is saved to `data_lake/hyperparams.json`. The main backend engine hot-reloads these optimal parameters seamlessly.
+
+---
+
+## 7. FastAPI External Access
+
+For algorithmic traders and researchers building external tools, you do not need to open the UI to access the intelligence.
+
+With the boot script running, query the FastAPI server directly:
+```bash
+# Get all AI predictions and signals
+curl http://localhost:8000/api/v1/predictions
+
+# Get deep ML data for a specific asset
+curl http://localhost:8000/api/v1/asset/AAPL
+```
+
+---
+
+## 8. Troubleshooting
+
+### Port Conflicts
+If Streamlit (8501) or FastAPI (8000) fail to bind:
+```bash
+kill -9 $(lsof -t -i:8501)
+kill -9 $(lsof -t -i:8000)
+```
+
+### Deep Learning (PyTorch) Memory Leaks
+If the backend crashes with CUDA Out of Memory (OOM) errors during the LSTM training phase, downgrade the `hidden_layer_size` in the `LSTMPredictor` class inside `stock_market_backend.py`.
+
+> [!WARNING]
+> **REITERATION OF RISK:** The outputs of this software are mathematical probabilities derived from the past. They do not guarantee future returns. Do not trade real money based on this software.

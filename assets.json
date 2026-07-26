@@ -10,5 +10,15 @@
   },
   "indices": {
     "Benchmark Indices": ["^NSEI", "^NSEBANK", "^BSESN"]
+  },
+  "crypto": {
+    "Majors": ["BTC-USD", "ETH-USD"]
+  },
+  "forex": {
+    "Currencies": ["USDINR=X"]
+  },
+  "global_equities": {
+    "US Tech": ["AAPL", "MSFT"],
+    "US Indices": ["^GSPC", "^IXIC"]
   }
 }

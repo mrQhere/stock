@@ -4,12 +4,11 @@ venv/
 env/
 .env
 
-# Project specific
+# Data and Logs
 data_lake/
-backend.log
 *.log
-picks.log
-*.json
+
+# Sensitive Info
 .streamlit/secrets.toml
 
 # Byte-compiled / optimized / DLL files

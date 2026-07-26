@@ -1,15 +1,19 @@
 <div align="center">
 
-# 🟢 Indian Stock Market Predictor & ROI Engine
+# 🟢 Stock Market Predictor & Institutional Quant Terminal
 
-**An autonomous, locally-hosted quantitative analysis engine tailored for the Indian Stock Market (NSE/BSE).**
+**An autonomous, locally-hosted quantitative analysis engine tailored for Global Equities, Crypto, and Forex.**
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![XGBoost](https://img.shields.io/badge/AI-XGBoost-orange.svg)](https://xgboost.readthedocs.io/)
+[![PyTorch](https://img.shields.io/badge/DeepLearning-PyTorch-red.svg)](https://pytorch.org/)
+[![FastAPI](https://img.shields.io/badge/API-FastAPI-009688.svg)](https://fastapi.tiangolo.com/)
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B.svg)](https://streamlit.io/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Designed for absolute privacy and offline capabilities, this system predicts returns on investment (ROI), evaluates risks, and logs the strategic rationale behind its picks.
+Designed for researchers and quants, this system fuses traditional tree-based models (XGBoost) with deep sequence learning (LSTM PyTorch), NLP sentiment analysis, and fundamental factor models (Fama-French) into a completely offline, local-first SQLite architecture.
+
+> [!CAUTION]
+> **NOT FINANCIAL ADVICE.** This is a highly experimental research tool. Do not deploy real capital trusting these predictions. Markets are fundamentally stochastic, and ML models are highly susceptible to overfitting and black-swan regime changes. 
 
 ![Terminal Overview Demo](assets/demo.gif)
 *[Watch the full walkthrough on YouTube](https://youtube.com/your-video-link-here)*
@@ -19,88 +23,69 @@ Designed for absolute privacy and offline capabilities, this system predicts ret
 ---
 
 ## 📑 Table of Contents
-- [Core Features](#-core-features)
-- [Prerequisites & Setup](#-prerequisites--setup)
-- [Architecture & Mechanics](#-architecture--mechanics)
-- [Technical Highlights](#-technical-highlights)
+- [Core Architecture](#-core-architecture)
+- [Why We Built This & Setup](#-why-we-built-this--setup)
+- [Advanced Analytics Engine](#-advanced-analytics-engine)
 - [Tech Stack](#-tech-stack)
 
 ---
 
-## ✨ Core Features
-
-- **Long-Term Investing Metrics:** Calculates 5Y CAGR, Sortino Ratio (downside risk), Historical VaR (Value at Risk), and Distance from 52-Week Highs/Lows.
-- **Advanced AI Analysis:** XGBoost AI is fed sophisticated technical indicators (Bollinger Bands, ATR, Stochastic Oscillators, MACD, RSI) to gauge momentum and volatility accurately.
-- **Explainable AI (SHAP):** Visually breaks down *exactly* which technical indicators drove the AI's buy/sell/hold decision.
-- **Monte Carlo Simulations:** 1,000-path probabilistic simulations forecast exact ROI over multiple horizons (7 Days, 1 Month, 1 Year), complete with macro black-swan stress tests.
+## 🏗 Core Architecture
+- **Dual AI Engine:** Simultaneously trains XGBoost (tree-based) and PyTorch LSTM (deep sequence learning) models to contrast standard factor logic vs deep time-series patterns.
+- **Embedded SQLite Data Lake:** All data, hyperparameter tuning results, and AI states are fully centralized in a local relational database (`quant.db`).
+- **Headless FastAPI Layer:** A fully standalone API server allows external programmatic access to the database's ML outputs.
+- **Optuna Auto-Tuning:** A dedicated background daemon dynamically optimizes XGBoost hyperparameters per-ticker using Bayesian search.
 
 ---
 
-## 🚀 Prerequisites & Setup
+## 🚀 Why We Built This & Setup
 
-To deploy this project on a fresh machine, you will need:
-- **Python 3.8+** installed
-- **Git** (to clone the repository)
-- A **bash-compatible shell** (Linux/macOS)
+Most retail trading platforms hide their algorithms or charge exorbitant fees for basic quantitative metrics. We built the **Stock Market Predictor** as an open-source, local-first alternative for researchers who want full transparency into the data pipeline, model weights, and mathematical logic driving the predictions.
+
+### Prerequisites
+- **Python 3.10+** (Required for PyTorch and FastAPI dependencies)
+- **Git**
+- **NVIDIA GPU (Optional but recommended for PyTorch/CUDA acceleration)**
 
 ### Installation
-
-1. **Make the boot script executable:**
+1. **Clone & Boot:**
    ```bash
    chmod +x stock_market_boot.sh
-   ```
-
-2. **Run the ignition sequence:**
-   ```bash
    ./stock_market_boot.sh
    ```
-   > **Note:** This automatically creates an isolated virtual environment, installs all dependencies, generates default assets, and launches the backend continuously in the background while bringing the frontend to your active terminal.
+   > **Note:** The boot script handles virtual environment creation, pip installations (including heavy PyTorch binaries), and spins up both the ML backend and the FastAPI server.
+
+2. **Security & Access (Passwords):**
+   The terminal is protected by an authentication wall. You must define a password in a Streamlit secrets file before use.
+   - Create a file at `.streamlit/secrets.toml`
+   - Add your password: `APP_PASSWORD = "your_secure_password"`
+   - *This file is ignored by `.gitignore` to prevent credential leaks.*
 
 ---
 
-## 🧠 Architecture & Mechanics
+## 🧠 Advanced Analytics Engine
 
-### 1. The Shadow Engine (Offline Data Sync)
-The backend (`stock_market_backend.py`) operates entirely in the background, minimizing compute and API overhead:
-- **Smart Fetching:** Only fetches data when the **Indian Stock Market is open (9:15 AM - 3:30 PM IST, Mon-Fri)**.
-- **Local Data Lake:** Downloaded data is securely stored in the `data_lake/` directory as `.csv` and `.json` files.
-- **Offline Mode:** The dashboard can be fully viewed offline; it simply loads the latest synced data from the lake.
+### 1. Market Screener & Factor Exposures
+The system features a lightning-fast local screener that queries `quant.db` without hitting external API rate limits. It automatically extracts Fama-French proxies (Size/Market Cap, Value/PB Ratio, Momentum) for advanced portfolio construction.
 
-### 2. The Investing Engine (Metrics & ROI)
+### 2. Natural Language Processing (NLP) Sentiment
+The backend continuously scrapes real-time financial headlines for target tickers using `yfinance` and parses them through a `vaderSentiment` NLP pipeline to calculate a quantitative Bullish/Bearish polarity score.
 
-The platform runs deep quantitative analysis on the fetched data, generating predictive paths and evaluating the Sharpe/Sortino ratios of the generated portfolios.
-
-
-
-### 3. Modifying Background Logic
-To customize the update frequency or logic:
-1. Open `stock_market_backend.py`.
-2. Locate `run_stock_market()` near the bottom of the file.
-3. Adjust the `time.sleep(3600)` variable to alter the hourly cycle, or modify `market_open_time` / `market_close_time` for different timezones.
-
----
-
-## ⚡ Technical Highlights
-
-- **Optimized for Indian Markets:** Pre-configured with major NSE indices and large-cap stocks (e.g., Reliance, TCS, Infosys using `.NS` suffixes).
-- **Zero-Telemetry Security:** All data parsing and AI model training happens 100% locally. Zero data is transmitted to third-party APIs beyond the initial Yahoo Finance fetch.
-- **Capital Deployment Matrices:** Instantly visualizes the projected value of a ₹10,000 investment under 6 distinct probabilistic scenarios across 7-day, 1-month, and 1-year horizons.
+### 3. Probabilistic Monte Carlo & Interactive Charting
+Forecasts are bounded by 1,000-path GARCH volatility Monte Carlo simulations. The frontend UI provides interactive Plotly charting, allowing researchers to draw custom trendlines over the AI's autoregressive 7-day projections.
 
 ---
 
 ## 🛠️ Tech Stack
-
 | Category | Technology |
 |---|---|
-| **Language** | Python 3 |
-| **Machine Learning** | XGBoost |
-| **Frontend UI** | Streamlit |
-| **Data Sourcing** | yfinance |
-| **Automation** | Bash Scripting |
-| **Timezone Parsing** | pytz |
+| **Deep Learning** | PyTorch (LSTM) |
+| **Machine Learning** | XGBoost, Optuna (Bayesian Tuning) |
+| **NLP** | vaderSentiment |
+| **API & DB** | FastAPI, Uvicorn, SQLite3 |
+| **Frontend UI** | Streamlit, Plotly |
 
 ---
 
-## ⚠️ Disclaimer
-
-This is a personal/educational project and does not constitute financial advice. Past backtest performance is not indicative of future results. Please do not deploy real capital based solely on the outputs of this experimental system.
+> [!WARNING]
+> **FINAL CAUTION:** This software is provided "as is". Financial markets are highly complex systems. The creator assumes no liability for trading losses incurred from using this tool.
