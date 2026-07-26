@@ -28,7 +28,7 @@ If this is your first time using the platform, the fastest way to evaluate the e
    ```
 3. The system will automatically download data for a default set of assets, train the initial AI models, and launch the web dashboard.
 4. Wait for the local URL to appear (usually `http://localhost:8501`) and open it in your browser.
-5. Enter the default authorization password: `stark`.
+5. Enter your configured authorization password (see the Security section below on how to set this up).
 
 ---
 
@@ -69,18 +69,17 @@ Once the boot sequence concludes, navigate to the provided Local URL (e.g., `htt
 ### Authentication Lock
 To ensure financial data integrity and privacy, the web dashboard natively requires an authorization code. 
 
-**Default Password:** `stark`
+### Password Configuration
+The system uses Streamlit secrets to manage passwords, ensuring no credentials are hardcoded into the source code.
 
-### Password Modification
-To change the default password, you must modify the frontend application code.
-
-1. Open `stock_market_ui.py` in your code editor.
-2. Locate the password verification logic around line 19:
-   ```python
-           if pwd == "stark":
+1. Locate the `.streamlit/secrets.toml.example` file in the repository root.
+2. Rename or copy this file to `.streamlit/secrets.toml`.
+3. Open `.streamlit/secrets.toml` in your code editor and set your desired password:
+   ```toml
+   APP_PASSWORD = "your_secure_password"
    ```
-3. Replace `"stark"` with your secure password.
-4. Save the file and restart the system to enforce the new credentials.
+4. Save the file and restart the system. The dashboard will now require this password.
+> **Note:** The `.streamlit/secrets.toml` file is explicitly ignored in `.gitignore` to prevent accidental commits of your password.
 
 ---
 
@@ -90,10 +89,10 @@ Upon successful authentication, the dashboard surfaces a comprehensive suite of 
 
 - **Long-Term Investing Metrics:** Provides essential capital allocation data including 5Y CAGR, Sortino Ratio, Historical Value at Risk (VaR), and Distance from 52-Week Highs/Lows.
 - **Advanced Technical Indicators:** Displays real-time AI inputs for Bollinger Bands, Average True Range (ATR), Stochastic Oscillator, MACD, and RSI.
-- **7-Day Forecast Chart:** Graphs the actual historical price action against the AI's projected 7-day quantitative path.
-- **SHAP Logic (Explainability):** A feature importance chart detailing exactly how much weight the AI assigned to specific indicators when generating its signal.
+- **7-Day Forecast Chart:** Graphs the actual historical price action against the AI's projected 7-day quantitative path. (Note: This is an autoregressive multi-step forecast bounded by historical volatility—uncertainty compounds with horizon).
+- **SHAP Logic (Explainability):** A feature importance chart detailing exactly how much weight the AI assigned to specific indicators when generating its signal. Model performance is validated against a 60-day holdout dataset, reported as **Holdout R²**.
 - **Reality Check (Backtest):** Compares how the AI's algorithmic strategy would have performed over the last 180 days versus a standard buy-and-hold approach.
-- **Monte Carlo Simulation:** A 1,000-path probabilistic simulation projecting potential price action over the next year. Includes togglable macroeconomic stress tests (e.g., 2008 Crash, Oil Shock).
+- **Monte Carlo Simulation:** A 1,000-path probabilistic simulation projecting potential price action over the next year. Includes togglable illustrative macroeconomic overlays (e.g., 2008 Crash, Oil Shock) that act as visual stress tests.
 
 ---
 

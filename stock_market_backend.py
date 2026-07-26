@@ -112,16 +112,25 @@ def train_engine(data: pd.DataFrame, ticker: str, dir_path: str):
     y = data['Daily_Return'].shift(-1).dropna()
     X = X.loc[y.index]
 
+    train_size = len(X) - 60
+    if train_size < 100:
+        train_size = int(len(X) * 0.8)
+        
+    X_train, X_holdout = X.iloc[:train_size], X.iloc[train_size:]
+    y_train, y_holdout = y.iloc[:train_size], y.iloc[train_size:]
+
     model = xgb.XGBRegressor(n_estimators=1200, learning_rate=0.03, max_depth=8,
                               subsample=0.8, colsample_bytree=0.8,
                               n_jobs=-1, random_state=42)
-    model.fit(X, y)
+    model.fit(X_train, y_train)
+
+    holdout_preds = model.predict(X_holdout)
+    holdout_r2 = max(0, r2_score(y_holdout, holdout_preds)) * 100
 
     fitted = model.predict(X)
     data['Hist_Ghost_Price'] = np.nan
     data.loc[X.index + 1, 'Hist_Ghost_Price'] = (X['Close'] * (1 + fitted)).values
 
-    compat = max(0, r2_score(y, fitted)) * 100
     last_pred = model.predict(data[features].iloc[[-2]])[0]
     actual    = data['Daily_Return'].iloc[-1]
     error     = abs(last_pred - actual) * 100
@@ -132,14 +141,21 @@ def train_engine(data: pd.DataFrame, ticker: str, dir_path: str):
     last_feats  = data[features].iloc[[-1]].copy()
     current_p   = float(last_feats['Close'].iloc[0])
     ghost_7d    = []
+    
+    train_std = y_train.std()
+    ret_clip_min = -3 * train_std
+    ret_clip_max = 3 * train_std
+
     for _ in range(7):
         p_ret = float(model.predict(last_feats)[0])
+        p_ret = max(min(p_ret, ret_clip_max), ret_clip_min)
+        
         current_p *= (1 + p_ret)
         ghost_7d.append(current_p)
         last_feats['Close'] = current_p
 
-    print(f"[{ticker}] Compat={compat:.1f}%  Error={error:.2f}%")
-    return ghost_7d, error, compat, feat_dict
+    print(f"[{ticker}] Holdout R2={holdout_r2:.1f}%  Error={error:.2f}%")
+    return ghost_7d, error, holdout_r2, feat_dict
 
 # ── Backtest ───────────────────────────────────────────────────────────────────
 def precision_backtest(data: pd.DataFrame, dir_path: str):
@@ -229,14 +245,14 @@ def run_correlation_guardian():
     except: pass
 
 # ── Build "why" rationale log ──────────────────────────────────────────────────
-def build_rationale(ticker, signal, compat, error, vol, prob, sharpe, max_dd, feat_dict, price, pr):
+def build_rationale(ticker, signal, holdout_r2, error, vol, prob, sharpe, max_dd, feat_dict, price, pr):
     top_feat   = max(feat_dict, key=feat_dict.get) if feat_dict else "N/A"
-    strength   = "HIGH" if compat > 70 else "MODERATE" if compat > 50 else "LOW"
+    strength   = "HIGH" if holdout_r2 > 70 else "MODERATE" if holdout_r2 > 50 else "LOW"
     risk_label = "LOW RISK" if abs(max_dd) < 10 else "MODERATE RISK" if abs(max_dd) < 20 else "HIGH RISK"
 
     rationale = (
         f"SIGNAL: {signal} | PRICE: ₹{price:,.2f} | 7D PROJECTION: {pr:+.2f}%\n"
-        f"  → Model Strength   : {strength} (R² compat={compat:.1f}%, error={error:.2f}%)\n"
+        f"  → Model Strength   : {strength} (Holdout R²={holdout_r2:.1f}%, error={error:.2f}%)\n"
         f"  → Dominant Driver  : {top_feat} (importance={feat_dict.get(top_feat,0):.3f})\n"
         f"  → GARCH Volatility : {vol*100:.2f}% daily | Upside Probability: {prob:.1f}%\n"
         f"  → Sharpe Ratio     : {sharpe:.2f} | Max Drawdown: {max_dd:.2f}%\n"
@@ -244,6 +260,25 @@ def build_rationale(ticker, signal, compat, error, vol, prob, sharpe, max_dd, fe
     )
     logging.info(f"[{ticker}]\n{rationale}")
     return rationale
+
+def generate_signal(pr: float, sharpe: float, max_dd: float, market_mode: str) -> str:
+    """Generate trading signal respecting both projection and risk metrics."""
+    if pr > 5:
+        sig = "STRONG BUY 🟢"
+    elif pr > 1.5:
+        sig = "BUY ↗️"
+    elif pr < -5:
+        sig = "STRONG SELL 🔴"
+    elif pr < -1.5:
+        sig = "SELL ↘️"
+    else:
+        sig = "HOLD ➖"
+
+    if "BEAR" in market_mode and sharpe < 0:
+        if "BUY" in sig:
+            sig = "HOLD ➖"
+            
+    return sig
 
 # ── Master run loop ────────────────────────────────────────────────────────────
 def run_stock_market():
@@ -301,7 +336,7 @@ def run_stock_market():
 
                     # ── Heavy compute ──────────────────────────────────────────
                     try:
-                        ghost, err, comp, feats = train_engine(data, tk, dp)
+                        ghost, err, holdout_r2, feats = train_engine(data, tk, dp)
                         sharpe, max_dd          = precision_backtest(data, dp)
                         prob, vol, scn, mcr     = monte_carlo_sim(data, dp)
 
@@ -328,20 +363,17 @@ def run_stock_market():
                         dist_low = ((price - low_52) / low_52) * 100 if low_52 > 0 else 0
 
                         pr    = ((ghost[-1] - price) / price) * 100
-                        sig   = ("STRONG BUY 🟢"  if pr >  5 else
-                                 "BUY ↗️"          if pr >  1.5 else
-                                 "STRONG SELL 🔴"  if pr < -5 else
-                                 "SELL ↘️"          if pr < -1.5 else "HOLD ➖")
-
                         market_mode = "BULL 🐂" if price > float(data['SMA_50'].iloc[-1]) else "BEAR 🐻"
-                        rationale   = build_rationale(tk, sig, comp, err, vol, prob,
+                        sig = generate_signal(pr, float(sharpe), float(max_dd), market_mode)
+
+                        rationale   = build_rationale(tk, sig, holdout_r2, err, vol, prob,
                                                       sharpe, max_dd, feats, price, pr)
 
                         rep = {
                             "Ticker": tk, "Category": asset_type, "Subcategory": subcat,
                             "Price": price, "Signal": sig, "Ghost": ghost,
                             "Scenarios": scn, "Macro": mcr,
-                            "Rationale": rationale, "Compat": comp, "Error": err,
+                            "Rationale": rationale, "Compat": holdout_r2, "Error": err,
                             "Vol": vol, "Prob": prob, "Sharpe": sharpe, "MaxDD": max_dd,
                             "Market_Mode": market_mode,
                             "Technical_Indicators": {

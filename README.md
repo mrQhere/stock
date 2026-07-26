@@ -11,7 +11,8 @@
 
 Designed for absolute privacy and offline capabilities, this system predicts returns on investment (ROI), evaluates risks, and logs the strategic rationale behind its picks.
 
-<img src="assets/terminal_overview.png" alt="Terminal Overview" width="100%"/>
+![Terminal Overview Demo](assets/demo.gif)
+*[Watch the full walkthrough on YouTube](https://youtube.com/your-video-link-here)*
 
 </div>
 
@@ -67,19 +68,9 @@ The backend (`stock_market_backend.py`) operates entirely in the background, min
 
 ### 2. The Investing Engine (Metrics & ROI)
 
-<div align="center">
-  <img src="assets/asset_analysis.png" alt="Asset Analysis and Trade Rationale" width="100%"/>
-</div>
-<br>
-<div align="center">
-  <img src="assets/quantitative_vision.png" alt="Quantitative Vision and AI Forecasting" width="100%"/>
-</div>
-
 The platform runs deep quantitative analysis on the fetched data, generating predictive paths and evaluating the Sharpe/Sortino ratios of the generated portfolios.
 
-<div align="center">
-  <img src="assets/monte_carlo_sim.png" alt="Monte Carlo Simulation Scenarios" width="100%"/>
-</div>
+
 
 ### 3. Modifying Background Logic
 To customize the update frequency or logic:
@@ -107,3 +98,9 @@ To customize the update frequency or logic:
 | **Data Sourcing** | yfinance |
 | **Automation** | Bash Scripting |
 | **Timezone Parsing** | pytz |
+
+---
+
+## ⚠️ Disclaimer
+
+This is a personal/educational project and does not constitute financial advice. Past backtest performance is not indicative of future results. Please do not deploy real capital based solely on the outputs of this experimental system.

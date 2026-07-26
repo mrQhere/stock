@@ -47,28 +47,25 @@ if [ ! -d "$BASE_DIR/jarvis_env" ]; then
     source "$BASE_DIR/jarvis_env/bin/activate"
     pip install --upgrade pip
     
-    PACKAGES=("yfinance" "pandas" "numpy" "xgboost" "arch" "scikit-learn" "streamlit" "plotly" "pytz" "matplotlib")
-    
-    for pkg in "${PACKAGES[@]}"; do
-        echo -e "\033[0;36mInstalling $pkg...\033[0m"
-        if pip install "$pkg"; then
-            echo -e "\033[0;32m$pkg installed successfully.\033[0m"
+    req_file="$BASE_DIR/requirements.txt"
+    echo -e "\033[0;36mInstalling from $req_file...\033[0m"
+    if pip install -r "$req_file"; then
+        echo -e "\033[0;32mRequirements installed successfully.\033[0m"
+    else
+        echo -e "\033[0;33mPrimary installation failed. Attempting redundancy methods...\033[0m"
+        # Redundancy 1: No cache
+        if pip install -r "$req_file" --no-cache-dir; then
+            echo -e "\033[0;32mRequirements installed successfully using --no-cache-dir.\033[0m"
+        # Redundancy 2: Prefer binary
+        elif pip install -r "$req_file" --prefer-binary; then
+            echo -e "\033[0;32mRequirements installed successfully using --prefer-binary.\033[0m"
+        # Redundancy 3: Try different mirror
+        elif pip install -r "$req_file" -i https://pypi.python.org/simple/; then
+            echo -e "\033[0;32mRequirements installed successfully using alternate mirror.\033[0m"
         else
-            echo -e "\033[0;33mPrimary installation failed for $pkg. Attempting redundancy methods...\033[0m"
-            # Redundancy 1: No cache
-            if pip install "$pkg" --no-cache-dir; then
-                echo -e "\033[0;32m$pkg installed successfully using --no-cache-dir.\033[0m"
-            # Redundancy 2: Prefer binary
-            elif pip install "$pkg" --prefer-binary; then
-                echo -e "\033[0;32m$pkg installed successfully using --prefer-binary.\033[0m"
-            # Redundancy 3: Try different mirror
-            elif pip install "$pkg" -i https://pypi.python.org/simple/; then
-                echo -e "\033[0;32m$pkg installed successfully using alternate mirror.\033[0m"
-            else
-                echo -e "\033[0;31mCRITICAL ERROR: Failed to install $pkg after all redundancy attempts. The application might be unstable.\033[0m"
-            fi
+            echo -e "\033[0;31mCRITICAL ERROR: Failed to install requirements after all redundancy attempts. The application might be unstable.\033[0m"
         fi
-    done
+    fi
     
     deactivate
     echo -e "\033[0;32mEnvironment setup complete!\033[0m"

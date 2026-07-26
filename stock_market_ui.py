@@ -16,7 +16,15 @@ if not st.session_state.authenticated:
     c1, c2, c3 = st.columns([1, 2, 1])
     pwd = c2.text_input("Enter Authorization Code:", type="password")
     if c2.button("Unlock Terminal", use_container_width=True):
-        if pwd == "stark":
+        expected_pwd = None
+        try:
+            expected_pwd = st.secrets.get("APP_PASSWORD")
+        except Exception:
+            pass
+        if not expected_pwd:
+            expected_pwd = os.environ.get("APP_PASSWORD")
+            
+        if expected_pwd and pwd == expected_pwd:
             st.session_state.authenticated = True
             st.rerun()
         else:
@@ -45,6 +53,7 @@ st.markdown("""
 
 st.title("🏦 Institutional Quant Terminal - India")
 st.markdown("---")
+st.caption("⚠️ **Disclaimer:** This is a personal/educational project, not financial advice. Past backtest performance is not indicative of future results.")
 
 col_a, col_b = st.columns(2)
 if os.path.exists(os.path.join(DATA_DIR, "lb.csv")):
@@ -62,7 +71,7 @@ if os.path.exists(os.path.join(DATA_DIR, "correlation_matrix.csv")):
         df_corr = get_csv(os.path.join(DATA_DIR, "correlation_matrix.csv"), index_col=0)
         st.dataframe(df_corr.style.background_gradient(cmap='coolwarm', axis=None).format("{:.2f}"), use_container_width=True)
 
-st.sidebar.header("Black Swan Stress Tests")
+st.sidebar.header("Illustrative Macro Overlays (not model inputs)")
 t_08 = st.sidebar.toggle("📉 2008 Crash (-40%)")
 t_oil = st.sidebar.toggle("🛢️ Oil Shock (-15%)")
 t_bub = st.sidebar.toggle("🫧 Bubble Burst (-25%)")
@@ -152,6 +161,7 @@ if os.path.exists(os.path.join(dp, "pred.json")):
     
     fig.update_layout(template="plotly_dark", height=500, margin=dict(l=0, r=0, t=30, b=0), xaxis_rangeslider_visible=False)
     st.plotly_chart(fig, use_container_width=True)
+    st.caption("Note: 7-day forward projection is an autoregressive multi-step forecast — uncertainty compounds with horizon.")
 
     col_f, col_bt = st.columns(2)
     feat_file = os.path.join(dp, "features.json")

@@ -7,7 +7,10 @@ env/
 # Project specific
 data_lake/
 backend.log
+*.log
+picks.log
 *.json
+.streamlit/secrets.toml
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
