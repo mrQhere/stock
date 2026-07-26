@@ -47,7 +47,7 @@ if [ ! -d "$BASE_DIR/jarvis_env" ]; then
     source "$BASE_DIR/jarvis_env/bin/activate"
     pip install --upgrade pip
     
-    PACKAGES=("yfinance" "pandas" "numpy" "xgboost" "arch" "scikit-learn" "streamlit" "plotly" "pytz")
+    PACKAGES=("yfinance" "pandas" "numpy" "xgboost" "arch" "scikit-learn" "streamlit" "plotly" "pytz" "matplotlib")
     
     for pkg in "${PACKAGES[@]}"; do
         echo -e "\033[0;36mInstalling $pkg...\033[0m"
