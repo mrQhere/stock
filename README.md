@@ -1,43 +1,109 @@
+<div align="center">
+
 # 🟢 Indian Stock Market Predictor & ROI Engine
 
-An autonomous, locally-hosted quantitative analysis engine tailored specifically for the Indian Stock Market (NSE/BSE). Designed for absolute privacy and offline capabilities, this system predicts returns on investment (ROI), evaluates risks, and logs the rationale behind its picks.
+**An autonomous, locally-hosted quantitative analysis engine tailored for the Indian Stock Market (NSE/BSE).**
 
-## 📋 Prerequisites & Setup
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![XGBoost](https://img.shields.io/badge/AI-XGBoost-orange.svg)](https://xgboost.readthedocs.io/)
+[![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B.svg)](https://streamlit.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-To run this project on a fresh machine, you need:
-- **Python 3.8+** installed on your system.
-- **Git** (to clone/upload the repository).
-- (Linux/Mac) `bash` shell to run the boot script.
+Designed for absolute privacy and offline capabilities, this system predicts returns on investment (ROI), evaluates risks, and logs the strategic rationale behind its picks.
 
-To launch the system:
-1. Make the boot script executable (if not already): `chmod +x stock_market_boot.sh`
-2. Run the ignition sequence: `./stock_market_boot.sh`
-   *(This automatically creates a virtual environment, installs dependencies, creates default assets, and launches both backend and frontend).*
+<img src="assets/terminal_overview.png" alt="Terminal Overview" width="100%"/>
 
-## 🧠 Background Working & Mechanics
+</div>
 
-### 1. Offline Data & Background Sync (The Shadow Engine)
-- The backend (`stock_market_backend.py`) runs in the background and only fetches data when the **Indian Stock Market is open (9:15 AM - 3:30 PM IST, Mon-Fri)**.
-- If the market is closed, it pauses to save compute and API calls.
-- Once downloaded, data is stored in the `data_lake/` folder as `.csv` and `.json` files. 
-- You can fully view the dashboard offline; it will load the last synced data from the `data_lake/` folder automatically.
+---
+
+## 📑 Table of Contents
+- [Core Features](#-core-features)
+- [Prerequisites & Setup](#-prerequisites--setup)
+- [Architecture & Mechanics](#-architecture--mechanics)
+- [Technical Highlights](#-technical-highlights)
+- [Tech Stack](#-tech-stack)
+
+---
+
+## ✨ Core Features
+
+- **Long-Term Investing Metrics:** Calculates 5Y CAGR, Sortino Ratio (downside risk), Historical VaR (Value at Risk), and Distance from 52-Week Highs/Lows.
+- **Advanced AI Analysis:** XGBoost AI is fed sophisticated technical indicators (Bollinger Bands, ATR, Stochastic Oscillators, MACD, RSI) to gauge momentum and volatility accurately.
+- **Explainable AI (SHAP):** Visually breaks down *exactly* which technical indicators drove the AI's buy/sell/hold decision.
+- **Monte Carlo Simulations:** 1,000-path probabilistic simulations forecast exact ROI over multiple horizons (7 Days, 1 Month, 1 Year), complete with macro black-swan stress tests.
+
+---
+
+## 🚀 Prerequisites & Setup
+
+To deploy this project on a fresh machine, you will need:
+- **Python 3.8+** installed
+- **Git** (to clone the repository)
+- A **bash-compatible shell** (Linux/macOS)
+
+### Installation
+
+1. **Make the boot script executable:**
+   ```bash
+   chmod +x stock_market_boot.sh
+   ```
+
+2. **Run the ignition sequence:**
+   ```bash
+   ./stock_market_boot.sh
+   ```
+   > **Note:** This automatically creates an isolated virtual environment, installs all dependencies, generates default assets, and launches the backend continuously in the background while bringing the frontend to your active terminal.
+
+---
+
+## 🧠 Architecture & Mechanics
+
+### 1. The Shadow Engine (Offline Data Sync)
+The backend (`stock_market_backend.py`) operates entirely in the background, minimizing compute and API overhead:
+- **Smart Fetching:** Only fetches data when the **Indian Stock Market is open (9:15 AM - 3:30 PM IST, Mon-Fri)**.
+- **Local Data Lake:** Downloaded data is securely stored in the `data_lake/` directory as `.csv` and `.json` files.
+- **Offline Mode:** The dashboard can be fully viewed offline; it simply loads the latest synced data from the lake.
 
 ### 2. The Investing Engine (Metrics & ROI)
-- **Long-Term Investing Metrics**: Designed for capital allocators, not day-traders. Calculates 5Y CAGR, Sortino Ratio (downside risk), Historical VaR (Value at Risk), Distance from 52-Week highs/lows, and Golden/Death Cross macroeconomic trends.
-- **Advanced Technical Inputs**: The XGBoost AI is fed sophisticated technical indicators (Bollinger Bands, Average True Range, Stochastic Oscillators, MACD, RSI) to accurately gauge momentum and volatility.
-- **The 'Why' Factor (SHAP)**: The UI visually breaks down which of these indicators drove the AI's buy/sell decision.
-- **ROI Projections**: 1,000-path Monte Carlo simulations forecast your exact ROI over multiple horizons (7 Days, 1 Month, 1 Year) based on your invested capital, including macro black-swan scenarios.
 
-### 3. Modifying the Background Logic
-If you want to change the background update frequency or logic:
-- Open `stock_market_backend.py`.
-- Find `run_stock_market()` near the bottom.
-- You can adjust the `time.sleep(3600)` to change the hourly cycle, or modify the `market_open_time` / `market_close_time` logic to fit other timezones or custom intervals.
+<div align="center">
+  <img src="assets/asset_analysis.png" alt="Asset Analysis and Trade Rationale" width="100%"/>
+</div>
+<br>
+<div align="center">
+  <img src="assets/quantitative_vision.png" alt="Quantitative Vision and AI Forecasting" width="100%"/>
+</div>
+
+The platform runs deep quantitative analysis on the fetched data, generating predictive paths and evaluating the Sharpe/Sortino ratios of the generated portfolios.
+
+<div align="center">
+  <img src="assets/monte_carlo_sim.png" alt="Monte Carlo Simulation Scenarios" width="100%"/>
+</div>
+
+### 3. Modifying Background Logic
+To customize the update frequency or logic:
+1. Open `stock_market_backend.py`.
+2. Locate `run_stock_market()` near the bottom of the file.
+3. Adjust the `time.sleep(3600)` variable to alter the hourly cycle, or modify `market_open_time` / `market_close_time` for different timezones.
+
+---
 
 ## ⚡ Technical Highlights
-* **Optimized for Indian Stocks:** Defaults to major NSE indices and large-cap stocks like Reliance, TCS, and Infosys (`.NS` suffixes).
-* **Zero-Telemetry Security:** All data parsing and AI training happens locally. Zero data is sent to third-party APIs beyond the initial Yahoo Finance fetch.
-* **Capital Deployment Matrices:** Shows exactly how much a ₹10,000 investment would be worth under 6 different mathematical scenarios across 7 days, 1 month, and 1 year.
+
+- **Optimized for Indian Markets:** Pre-configured with major NSE indices and large-cap stocks (e.g., Reliance, TCS, Infosys using `.NS` suffixes).
+- **Zero-Telemetry Security:** All data parsing and AI model training happens 100% locally. Zero data is transmitted to third-party APIs beyond the initial Yahoo Finance fetch.
+- **Capital Deployment Matrices:** Instantly visualizes the projected value of a ₹10,000 investment under 6 distinct probabilistic scenarios across 7-day, 1-month, and 1-year horizons.
+
+---
 
 ## 🛠️ Tech Stack
-`Python 3` | `XGBoost` | `Streamlit` | `yfinance` | `Bash Scripting` | `pytz`
+
+| Category | Technology |
+|---|---|
+| **Language** | Python 3 |
+| **Machine Learning** | XGBoost |
+| **Frontend UI** | Streamlit |
+| **Data Sourcing** | yfinance |
+| **Automation** | Bash Scripting |
+| **Timezone Parsing** | pytz |
