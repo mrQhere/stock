@@ -7,15 +7,15 @@ from sklearn.metrics import r2_score
 import json
 import os
 import time
-import requests
 import warnings
 from datetime import datetime
+import pytz
 
 warnings.filterwarnings('ignore')
 
-DATA_DIR = "/home/dxt/JARVIS_System/data_lake"
-ASSET_FILE = "/home/dxt/JARVIS_System/assets.json"
-OLLAMA_ENDPOINT = "http://127.0.0.1:11434/api/generate"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data_lake")
+ASSET_FILE = os.path.join(BASE_DIR, "assets.json")
 
 # Terminal Alert Colors
 BLINK_RED = '\033[5;31m'
@@ -28,33 +28,15 @@ def fetch_and_store_data(ticker, dir_path):
     print(f"\n{CYAN}[{ticker}] Connecting to Data Lake...{RESET}")
     
     try:
-        if os.path.exists(csv_path):
-            existing_df = pd.read_csv(csv_path)
-            existing_df['Date'] = pd.to_datetime(existing_df['Date'])
-            last_date = existing_df['Date'].max()
+        print(f"[{ticker}] Syncing latest 5y market data...")
+        data = yf.Ticker(ticker).history(period="5y")
+        if data is None or data.empty:
+            print(f"[{ticker}] No data returned from yfinance.")
+            return None
             
-            # --- THE BULLETPROOF DATE FIX ---
-            try:
-                new_data = yf.Ticker(ticker).history(start=last_date.strftime('%Y-%m-%d'))
-            except Exception as yf_err:
-                new_data = pd.DataFrame() # Prevents the NoneType crash
-            
-            if new_data is not None and not new_data.empty:
-                print(f"[{ticker}] Syncing latest market data...")
-                new_data.index = new_data.index.tz_localize(None)
-                new_data.reset_index(inplace=True)
-                new_data.rename(columns={'index': 'Date'}, inplace=True)
-                combined_df = pd.concat([existing_df, new_data], ignore_index=True)
-                combined_df.drop_duplicates(subset='Date', keep='last', inplace=True)
-                data = combined_df
-            else:
-                data = existing_df
-        else:
-            print(f"[{ticker}] No local data found. Fetching MAX history.")
-            data = yf.Ticker(ticker).history(period="max")
-            data.index = data.index.tz_localize(None)
-            data.reset_index(inplace=True)
-            data.rename(columns={'index': 'Date'}, inplace=True)
+        data.index = data.index.tz_localize(None)
+        data.reset_index(inplace=True)
+        data.rename(columns={'index': 'Date', 'Date': 'Date'}, inplace=True) # Ensure 'Date' column is named properly
 
         data['SMA_20'] = data['Close'].rolling(window=20).mean()
         data['SMA_50'] = data['Close'].rolling(window=50).mean()
@@ -66,11 +48,11 @@ def fetch_and_store_data(ticker, dir_path):
     except Exception as e:
         print(f"[{ticker}] Fetch Error: {e}")
         return None
+
 def train_engine(data, ticker, dir_path):
-    # --- FIXED: Reset the index to seal the gaps caused by dropna() ---
     data.reset_index(drop=True, inplace=True)
     
-    print(f"[SYSTEM] Hourly Training Loop Triggered for {ticker} ({len(data)} Days of Memory)...")
+    print(f"[SYSTEM] Engine Training Triggered for {ticker} ({len(data)} Days of Memory)...")
     features = ['Close', 'SMA_20', 'SMA_50', 'Volatility_20']
     X = data[features].iloc[:-1]
     y = data['Daily_Return'].shift(-1).dropna()
@@ -79,7 +61,6 @@ def train_engine(data, ticker, dir_path):
     model = xgb.XGBRegressor(n_estimators=1200, learning_rate=0.03, max_depth=8, n_jobs=-1, random_state=42)
     model.fit(X, y)
     
-    # --- FIXED: Use .values to strip the index and prevent silent NaN alignment ---
     fitted_returns = model.predict(X)
     data['Hist_Ghost_Price'] = np.nan
     data.loc[X.index + 1, 'Hist_Ghost_Price'] = (X['Close'] * (1 + fitted_returns)).values
@@ -109,10 +90,15 @@ def train_engine(data, ticker, dir_path):
         last_feats['Close'] = current_p
         
     return ghost, error, compat
+
 def precision_backtest(data, dir_path):
-    # --- 180 DAY REALITY CHECK ---
     bt = data.tail(180).copy()
-    bt['Signal'] = np.where(bt['SMA_20'] > bt['SMA_50'], 1, 0)
+    if 'Hist_Ghost_Price' in bt.columns:
+        bt['AI_Return'] = (bt['Hist_Ghost_Price'] - bt['Close'].shift(1)) / bt['Close'].shift(1)
+        bt['Signal'] = np.where(bt['AI_Return'] > 0, 1, 0)
+    else:
+        bt['Signal'] = np.where(bt['SMA_20'] > bt['SMA_50'], 1, 0)
+        
     bt['Strat_Return'] = bt['Daily_Return'] * bt['Signal'].shift(1)
     bt['Hold_Equity'] = (1 + bt['Daily_Return']).cumprod() * 10000
     bt['Strategy_Equity'] = (1 + bt['Strat_Return']).cumprod() * 10000
@@ -122,8 +108,14 @@ def precision_backtest(data, dir_path):
 
 def aladdin_sim(data, dir_path):
     rets = data['Daily_Return'].dropna() * 100
-    res = arch_model(rets, vol='Garch', p=1, q=1).fit(disp='off')
-    v = res.conditional_volatility.iloc[-1] / 100
+    try:
+        res = arch_model(rets, vol='Garch', p=1, q=1).fit(disp='off')
+        v = res.conditional_volatility.iloc[-1] / 100
+    except Exception as e:
+        print(f"[SYSTEM] GARCH model failed to converge. Falling back to simple volatility. Error: {e}")
+        v = data['Volatility_20'].iloc[-1]
+        if pd.isna(v): v = 0.02
+        
     lp = float(data['Close'].iloc[-1])
     paths = np.zeros((252, 1000))
     paths[0] = lp
@@ -166,35 +158,77 @@ def run_correlation_guardian():
             df_returns.corr().to_csv(os.path.join(DATA_DIR, "correlation_matrix.csv"))
     except: pass
 
-def run_jarvis():
+def run_stock_market():
     while True:
-        with open(ASSET_FILE) as f: assets = json.load(f)
+        try:
+            with open(ASSET_FILE) as f: assets = json.load(f)
+        except Exception as e:
+            print(f"{BLINK_RED}[SYSTEM] Failed to read {ASSET_FILE}: {e}{RESET}")
+            time.sleep(60)
+            continue
+
+        # Check Indian Market Timings (9:15 AM to 3:30 PM IST, Mon-Fri)
+        ist = pytz.timezone('Asia/Kolkata')
+        now_ist = datetime.now(ist)
+        
+        is_weekend = now_ist.weekday() >= 5
+        market_open_time = now_ist.replace(hour=9, minute=15, second=0, microsecond=0)
+        market_close_time = now_ist.replace(hour=15, minute=30, second=0, microsecond=0)
+        
+        is_market_open = not is_weekend and (market_open_time <= now_ist <= market_close_time)
+        
+        if not is_market_open:
+            print(f"{CYAN}[SYSTEM] Indian Market is currently CLOSED (Current IST: {now_ist.strftime('%H:%M:%S')}). Waiting for market to open...{RESET}")
+            time.sleep(1800) # Sleep for 30 minutes before checking again
+            # We still allow one initial fetch even if closed, to ensure offline data exists.
+            # But let's just proceed to fetch offline data once and then block? 
+            # Actually, if we just sleep here, it won't fetch anything. Let's make it smarter:
+            # We will still process assets to ensure offline files exist, but we won't re-fetch from yfinance if we already have today's offline data.
+
         lb = []
         for cat, tks in assets.items():
             for tk in tks:
                 dp = os.path.join(DATA_DIR, tk)
                 os.makedirs(dp, exist_ok=True)
+                
+                prev_date = None
+                hist_path = os.path.join(dp, "hist.csv")
+                if os.path.exists(hist_path):
+                    try:
+                        prev_df = pd.read_csv(hist_path)
+                        prev_date = str(prev_df['Date'].iloc[-1])
+                    except:
+                        pass
+
                 data = fetch_and_store_data(tk, dp)
                 
                 if data is not None:
+                    curr_date = str(data['Date'].iloc[-1])
+                    
+                    if prev_date == curr_date and os.path.exists(os.path.join(dp, "pred.json")):
+                        print(f"[{tk}] Data unchanged (Last: {curr_date}). Skipping AI Retraining.")
+                        
+                        # Just append the old data to leaderboard and skip training
+                        try:
+                            with open(os.path.join(dp, "pred.json")) as f: rep = json.load(f)
+                            lb.append({"Asset": tk, "Price": f"₹{rep['Price']:,.2f}", "Signal": rep['Signal'], "Vol": f"{rep['Vol']*100:.2f}%", "Prob": f"{rep['Prob']:.1f}%"})
+                        except: pass
+                        continue
+                        
                     ghost, err, comp = train_engine(data, tk, dp)
                     precision_backtest(data, dp)
                     prob, vol, scn, mcr = aladdin_sim(data, dp)
                     
-                    try:
-                        verdict = requests.post(OLLAMA_ENDPOINT, json={"model": "llama3", "prompt": f"JARVIS Report {tk}: Price {data['Close'].iloc[-1]:.2f}, 7D Dir: {'UP' if ghost[-1] > data['Close'].iloc[-1] else 'DOWN'}. 3-sentence risk audit.", "stream": False}, timeout=None).json()['response']
-                    except:
-                        verdict = "AI Council Offline. Ensure Ollama is running."
-
                     market_mode = "BULL 🐂" if float(data['Close'].iloc[-1]) > float(data['SMA_50'].iloc[-1]) else "BEAR 🐻"
-                    vol_stop = float(data['Close'].iloc[-1]) * (1 - (vol * 1.5))
                     pr = ((ghost[-1] - float(data['Close'].iloc[-1])) / float(data['Close'].iloc[-1])) * 100
                     sig = "STRONG BUY 🟢" if pr > 5 else "BUY ↗️" if pr > 1.5 else "STRONG SELL 🔴" if pr < -5 else "SELL ↘️" if pr < -1.5 else "HOLD ➖"
+
+                    verdict = f"Algorithmic Audit: Model exhibits {comp:.1f}% historical compatibility with a {err:.2f}% error margin. 7-Day projection is {'BULLISH' if pr > 0 else 'BEARISH'} ({pr:+.2f}%). Volatility stands at {vol*100:.1f}%, suggesting a {market_mode.split()[0]} environment."
 
                     rep = {
                         "Price": float(data['Close'].iloc[-1]), "Signal": sig, "Ghost": ghost, 
                         "Scenarios": scn, "Macro": mcr, "Verdict": verdict, "Compat": comp, 
-                        "Error": err, "Vol": vol, "Prob": prob, "Market_Mode": market_mode, "Vol_Stop": vol_stop
+                        "Error": err, "Vol": vol, "Prob": prob, "Market_Mode": market_mode, "Vol_Stop": float(data['Close'].iloc[-1]) * (1 - (vol * 1.5))
                     }
                     with open(os.path.join(dp, "pred.json"), 'w') as f: json.dump(rep, f)
                     data.to_csv(os.path.join(dp, "hist.csv"), index=False)
@@ -205,7 +239,7 @@ def run_jarvis():
         run_correlation_guardian()
         
         print(f"\n{BOLD_GREEN}[{datetime.now().strftime('%H:%M:%S')}] Hourly Cycle Complete. Sleeping for 60 Minutes...{RESET}")
-        time.sleep(3600)  # EXACTLY 1 HOUR LOOP
+        time.sleep(3600)
 
 if __name__ == "__main__": 
-    run_jarvis()
+    run_stock_market()

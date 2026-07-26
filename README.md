@@ -1,4 +1,4 @@
-# 🟢 JARVIS V6: Sovereign Institutional Quant Terminal
+# 🟢 Stock Market Predictor: Sovereign Institutional Quant Terminal
 
 An autonomous, locally-hosted quantitative analysis engine and terminal. Designed for absolute privacy and resource efficiency, this system executes machine learning pipelines, Monte Carlo simulations, and GenAI risk assessments entirely on local hardware without relying on external cloud APIs.
 
@@ -9,7 +9,7 @@ An autonomous, locally-hosted quantitative analysis engine and terminal. Designe
 
 ### ⚡ Technical Highlights
 * **Optimized for Constrained Hardware:** Engineered to run complex GARCH(1,1) volatility models, 1,200-tree XGBoost ensembles, and a 4.7GB LLM simultaneously on just **2 Cores and 8.7GB RAM**.
-* **Zero-Telemetry Security:** Built with a "Sovereign First" mindset. All data parsing, AI training, and inference happen locally on a Linux Mint VM. Zero data is sent to OpenAI or third-party clouds.
+* **Zero-Telemetry Security:** Built with a "Sovereign First" mindset. All data parsing, AI training, and inference happen locally. Zero data is sent to OpenAI or third-party clouds.
 * **Black Swan Stress Testing:** Features 6 dynamic macro-economic overlay models (2008 Crash, Oil War, Hyperinflation, etc.) modifying the 1,000-path Monte Carlo simulations.
 * **Sovereign Boot Sequence:** A custom bash ignition script that handles environment activation, daemon resurrection, and secure password gating before deploying the UI.
 

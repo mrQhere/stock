@@ -1,0 +1,5 @@
+{
+  "Large Cap": ["RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "ICICIBANK.NS"],
+  "Mid Cap": ["TATAPOWER.NS", "IRCTC.NS", "ZOMATO.NS"],
+  "Indices": ["^NSEI", "^NSEBANK"]
+}
