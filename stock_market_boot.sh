@@ -47,6 +47,9 @@ if [ ! -d "$BASE_DIR/jarvis_env" ]; then
     source "$BASE_DIR/jarvis_env/bin/activate"
     pip install --upgrade pip
     
+    echo -e "\033[0;36mInstalling PyTorch CPU wheels to save bandwidth and space...\033[0m"
+    pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu
+    
     req_file="$BASE_DIR/requirements.txt"
     echo -e "\033[0;36mInstalling from $req_file...\033[0m"
     if pip install -r "$req_file"; then
