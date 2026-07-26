@@ -1,5 +1,7 @@
 # Stock Market Predictor: Advanced Researcher Guide
 
+**GitHub Repository:** [mrQhere/stock](https://github.com/mrQhere/stock)
+
 Welcome to the **Stock Market Predictor**. This document serves as the technical manual for operating, tuning, and understanding the mathematical and architectural limits of the platform.
 
 > [!CAUTION]
@@ -73,11 +75,21 @@ The core forecasting engine relies on an ensemble approach, deliberately pitting
 
 ---
 
-## 5. Factor Analysis & NLP Pipeline
+## 5. Company Snapshot & NLP Pipeline
 
-The platform does not rely solely on technicals. It incorporates fundamental and alternative data constraints:
-- **NLP Sentiment:** Real-time Yahoo Finance headlines are parsed through `vaderSentiment`. A negative sentiment score acts as a hard mathematical penalty against algorithmic Buy signals.
-- **Fama-French Exposures:** The system extracts metadata to estimate Size (Market Cap), Value (P/B), and Momentum (6M Trailing Return), anchoring the AI's kinetic predictions in traditional macroeconomic reality.
+The platform does not rely solely on technicals. It incorporates fundamental and alternative data constraints to ensure algorithmic signals are anchored in reality:
+- **NLP Sentiment:** Real-time Yahoo Finance headlines are parsed through `vaderSentiment`. A negative sentiment score acts as a hard mathematical penalty against algorithmic Buy signals. For instance, a technical "Buy" signal will be capped to a "Hold" if the overarching news sentiment is deeply bearish or if the asset is in a historical drawdown cycle exceeding 20%.
+- **Snapshot Metrics:** The system extracts raw company metrics including Market Cap, Price/Book Ratio, and 6M Trailing Momentum. These numbers are purely observational and provide the researcher with immediate context regarding the asset's size and value standing before examining the algorithmic predictions.
+
+---
+
+## 5b. The Block Bootstrap Engine (Monte Carlo)
+
+The most advanced feature of the UI is its approach to risk simulation. Standard quant models use simple Gaussian random walks, which dangerously underestimate the likelihood of massive market crashes (fat tails). 
+This tool discards the bell curve. It implements a **Historical Block Bootstrap**, drawing random 5-day continuous blocks from the asset's real trading history to build 1,000 possible future paths.
+
+- **Real Crash Simulation:** On the sidebar, you can overlay real historical crashes (e.g., the 2008 Financial Crisis, the 2020 COVID Panic, and the 2022 Rate Hike). 
+- **Dynamic Calibration:** Toggling these scenarios does not just draw a line on the chart; it fundamentally restructures the simulation. The backend blends the return distributions from those exact historical disaster windows into the ticker's probability matrix, dynamically updating the Capital Deployment Scenario tables so you know exactly what your downside risk looks like in a true Black Swan event.
 
 ---
 
@@ -101,11 +113,12 @@ For algorithmic traders and researchers building external tools, you do not need
 With the boot script running, query the FastAPI server directly:
 ```bash
 # Get all AI predictions and signals
-curl http://localhost:8000/api/v1/predictions
+curl -H "X-API-Key: your_secure_api_key" http://localhost:8000/api/v1/predictions
 
 # Get deep ML data for a specific asset
-curl http://localhost:8000/api/v1/asset/AAPL
+curl -H "X-API-Key: your_secure_api_key" http://localhost:8000/api/v1/asset/AAPL
 ```
+*Note: The `X-API-Key` header is strictly enforced for all data endpoints. You must configure `QUANT_API_KEY` in your environment variables for this to function.*
 
 ---
 

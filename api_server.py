@@ -1,9 +1,17 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header, Depends
 import sqlite3
 import json
 import os
 
 app = FastAPI(title="JARVIS-V6 Quant API", version="1.0")
+
+API_KEY = os.environ.get("QUANT_API_KEY")
+
+def verify_key(x_api_key: str = Header(None)):
+    if not API_KEY:
+        raise HTTPException(status_code=503, detail="API_KEY not configured on server.")
+    if x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key.")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "data_lake", "quant.db")
@@ -19,7 +27,7 @@ def get_db():
 def root():
     return {"status": "online", "message": "JARVIS-V6 API Server"}
 
-@app.get("/api/v1/predictions")
+@app.get("/api/v1/predictions", dependencies=[Depends(verify_key)])
 def get_all_predictions():
     conn = get_db()
     rows = conn.execute("SELECT * FROM predictions").fetchall()
@@ -33,7 +41,7 @@ def get_all_predictions():
         results.append(data)
     return results
 
-@app.get("/api/v1/asset/{ticker}")
+@app.get("/api/v1/asset/{ticker}", dependencies=[Depends(verify_key)])
 def get_asset(ticker: str):
     conn = get_db()
     row = conn.execute("SELECT * FROM predictions WHERE Ticker = ?", (ticker,)).fetchone()
@@ -47,7 +55,7 @@ def get_asset(ticker: str):
         data['JSON_Blob'] = json.loads(data['JSON_Blob'])
     return data
 
-@app.get("/api/v1/leaderboard")
+@app.get("/api/v1/leaderboard", dependencies=[Depends(verify_key)])
 def get_leaderboard():
     conn = get_db()
     try:

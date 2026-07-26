@@ -3,18 +3,37 @@ jarvis_env/
 venv/
 env/
 .env
+.venv/
+Pipfile.lock
+poetry.lock
 
 # Data and Logs
 data_lake/
 *.log
+*.sqlite3
+*.db
+*.db-journal
 
 # Sensitive Info
 .streamlit/secrets.toml
+secrets.toml
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+
+# IDE and Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.ipynb_checkpoints/
 
 # OS generated files
 .DS_Store

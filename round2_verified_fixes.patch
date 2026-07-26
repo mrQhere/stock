@@ -1,0 +1,95 @@
+diff --git a/stock_market_backend.py b/stock_market_backend.py
+index 6446689..809a868 100644
+--- a/stock_market_backend.py
++++ b/stock_market_backend.py
+@@ -289,7 +289,17 @@ def generate_signal(pr: float, sharpe: float, max_dd: float, market_mode: str, s
+     elif pr < -1.5: sig = "SELL ↘️"
+     else: sig = "HOLD ➖"
+ 
+-    if "BEAR" in market_mode and sharpe < 0 and "BUY" in sig: sig = "HOLD ➖"
++    # Risk gate: any one of these conditions caps a BUY-side signal at HOLD.
++    # Previously only the BEAR+negative-sharpe combination was checked, so max_dd
++    # was accepted as a parameter but never actually used — a BULL-mode ticker with
++    # a catastrophic historical drawdown could still print STRONG BUY unchecked.
++    risky = (
++        ("BEAR" in market_mode and sharpe < 0) or
++        (max_dd <= -20) or
++        (sharpe < -0.5)
++    )
++    if risky and "BUY" in sig:
++        sig = "HOLD ➖"
+     return sig
+ 
+ def calculate_portfolio_weights(lb_data, conn):
+diff --git a/tests/test_backend.py b/tests/test_backend.py
+index 5c42eb8..ec73e0d 100644
+--- a/tests/test_backend.py
++++ b/tests/test_backend.py
+@@ -1,5 +1,6 @@
+ import sys
+ import os
++import sqlite3
+ import pytest
+ import pandas as pd
+ import numpy as np
+@@ -9,17 +10,23 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
+ from stock_market_backend import generate_signal, precision_backtest
+ 
+ def test_generate_signal():
+-    # Bull mode, positive sharpe, high pr -> STRONG BUY
+-    assert "STRONG BUY" in generate_signal(pr=6.0, sharpe=1.2, max_dd=-5.0, market_mode="BULL 🐂")
+-    
+-    # Bear mode, positive sharpe, high pr -> STRONG BUY
+-    assert "STRONG BUY" in generate_signal(pr=6.0, sharpe=1.2, max_dd=-5.0, market_mode="BEAR 🐻")
++    # Bull mode, positive sharpe, high pr, positive sentiment -> STRONG BUY
++    assert "STRONG BUY" in generate_signal(pr=6.0, sharpe=1.2, max_dd=-5.0, market_mode="BULL 🐂", sentiment=0.3)
++
++    # Bear mode, positive sharpe, high pr, positive sentiment -> STRONG BUY allowed
++    assert "STRONG BUY" in generate_signal(pr=6.0, sharpe=1.2, max_dd=-5.0, market_mode="BEAR 🐻", sentiment=0.3)
++
++    # Bear mode, negative sharpe, high pr -> capped at HOLD regardless of sentiment
++    assert "HOLD" in generate_signal(pr=6.0, sharpe=-0.24, max_dd=-16.71, market_mode="BEAR 🐻", sentiment=0.3)
+ 
+-    # Bear mode, negative sharpe, high pr -> cap at HOLD
+-    assert "HOLD" in generate_signal(pr=6.0, sharpe=-0.24, max_dd=-16.71, market_mode="BEAR 🐻")
+-    
+     # Bear mode, negative sharpe, negative pr -> SELL
+-    assert "SELL" in generate_signal(pr=-2.0, sharpe=-0.5, max_dd=-20.0, market_mode="BEAR 🐻")
++    assert "SELL" in generate_signal(pr=-2.0, sharpe=-0.5, max_dd=-20.0, market_mode="BEAR 🐻", sentiment=-0.3)
++
++    # BULL mode, catastrophic drawdown, high pr -> should NOT be an uncapped STRONG BUY
++    # (this is the max_dd blind spot: currently generate_signal ignores max_dd entirely
++    # outside the BEAR+sharpe<0 branch, so this test documents the gap and will fail
++    # until max_dd is actually used as a cap condition)
++    assert "STRONG BUY" not in generate_signal(pr=6.0, sharpe=0.1, max_dd=-35.0, market_mode="BULL 🐂", sentiment=0.3)
+ 
+ def test_technical_indicators_and_risk():
+     # Create a synthetic equity curve
+@@ -29,16 +36,22 @@ def test_technical_indicators_and_risk():
+     prices[100:120] = prices[100:120] * 0.8  # Introduce a 20% drawdown
+     
+     df = pd.DataFrame({"Date": dates, "Close": prices, "High": prices * 1.05, "Low": prices * 0.95})
++    df['Ticker'] = "TEST.NS"  # precision_backtest writes to a 'backtests' table keyed on Ticker
+     df['SMA_20'] = df['Close'].rolling(20).mean()
+     df['SMA_50'] = df['Close'].rolling(50).mean()
+     # Dummy Hist_Ghost_Price so it uses AI logic
+-    df['Hist_Ghost_Price'] = df['Close'] * 1.01 
++    df['Hist_Ghost_Price'] = df['Close'] * 1.01
+     df['Daily_Return'] = df['Close'].pct_change()
+     df.dropna(inplace=True)
+-    
+-    # We will test precision_backtest logic (Sharpe & max DD)
+-    sharpe, max_dd = precision_backtest(df, "/tmp")
+-    
++
++    # precision_backtest(data, ticker, conn) needs a real sqlite connection with the
++    # 'backtests' table present, since it deletes/inserts rows as a side effect.
++    conn = sqlite3.connect(":memory:")
++    conn.execute('''CREATE TABLE backtests (Ticker TEXT, Date TEXT, Hold_Equity REAL, Strategy_Equity REAL)''')
++
++    sharpe, max_dd = precision_backtest(df, "TEST.NS", conn)
++    conn.close()
++
+     assert isinstance(sharpe, float)
+     assert isinstance(max_dd, float)
+     assert max_dd < 0  # Should catch the drawdown

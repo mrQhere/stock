@@ -263,20 +263,28 @@ def monte_carlo_sim(data: pd.DataFrame, ticker: str):
     except:
         v = data['Volatility_20'].iloc[-1] if not pd.isna(data['Volatility_20'].iloc[-1]) else 0.02
 
-    lp, mu = float(data['Close'].iloc[-1]), rets.mean() / 100
-    paths = np.zeros((252, 1000)); paths[0] = lp
-    for t in range(1, 252):
-        paths[t] = paths[t-1] * np.exp((mu - 0.5*v**2) + v * np.random.standard_normal(1000))
+    lp = float(data['Close'].iloc[-1])
+    
+    # 3a. Replace Gaussian shocks with historical block bootstrap
+    hist_returns = data['Daily_Return'].dropna().values
+    block_size = 5
+    n_blocks = 252 // block_size + 1
+
+    def bootstrap_path(hist_returns, n_blocks, block_size, start_price):
+        prices = [start_price]
+        for _ in range(n_blocks):
+            start_idx = np.random.randint(0, len(hist_returns) - block_size)
+            block = hist_returns[start_idx:start_idx + block_size]
+            for r in block:
+                prices.append(prices[-1] * (1 + r))
+        return prices[:253]
+
+    paths = np.array([bootstrap_path(hist_returns, n_blocks, block_size, lp) for _ in range(1000)]).T
 
     mc_paths = [paths[:30, i].tolist() for i in range(50)]
-    macro = {
-        "2008_Crash":   [lp*(1 - 0.40*(i/30)**1.5) for i in range(30)],
-        "Oil_War":      [lp*(1 - 0.15*(i/30))       for i in range(30)],
-        "Bubble_Burst": [lp*(1 - 0.25*(i/30)**0.8)  for i in range(30)],
-        "Pandemic":     [lp*(1 - 0.30*np.sin(np.pi*i/30)) for i in range(30)],
-        "Hyperinflation":[lp*(1 + 0.50*(i/30)**2)   for i in range(30)],
-        "Tech_Boom":    [lp*(1 + 0.30*(i/30))        for i in range(30)],
-    }
+    
+    # We will remove the old hardcoded macro scenarios here since UI will compute them
+    macro = {}
 
     def sc(d): return {k: float(np.percentile(paths[d], p)) for k, p in [("Extreme_Good",95),("Good",75),("Most_Likely",50),("Bad",25),("Extreme_Bad",5)]}
     prob_up = float(np.mean(paths[30] > lp) * 100)
@@ -289,7 +297,17 @@ def generate_signal(pr: float, sharpe: float, max_dd: float, market_mode: str, s
     elif pr < -1.5: sig = "SELL ↘️"
     else: sig = "HOLD ➖"
 
-    if "BEAR" in market_mode and sharpe < 0 and "BUY" in sig: sig = "HOLD ➖"
+    # Risk gate: any one of these conditions caps a BUY-side signal at HOLD.
+    # Previously only the BEAR+negative-sharpe combination was checked, so max_dd
+    # was accepted as a parameter but never actually used — a BULL-mode ticker with
+    # a catastrophic historical drawdown could still print STRONG BUY unchecked.
+    risky = (
+        ("BEAR" in market_mode and sharpe < 0) or
+        (max_dd <= -20) or
+        (sharpe < -0.5)
+    )
+    if risky and "BUY" in sig:
+        sig = "HOLD ➖"
     return sig
 
 def calculate_portfolio_weights(lb_data, conn):
@@ -336,7 +354,7 @@ def run_stock_market():
                     except: prev_date = None
 
                     data = fetch_and_store(tk, conn)
-                    if data is None: continue
+                    if data is None or data.empty: continue
 
                     curr_date = str(data['Date'].iloc[-1])
                     if prev_date and prev_date[:10] == curr_date[:10]:

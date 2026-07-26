@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
+import yfinance as yf
 import json
 import os
 import sqlite3
@@ -61,6 +63,44 @@ def get_json_blob(ticker):
         pass
     return None
 
+@st.cache_data(ttl=3600)
+def get_crash_windows():
+    try:
+        # Fetch NIFTY 50 index history back far enough to cover real crash windows
+        nifty = yf.Ticker("^NSEI").history(period="max", auto_adjust=True)
+        if nifty.empty: return {}
+        nifty['Daily_Return'] = nifty['Close'].pct_change()
+        
+        # Real windows
+        w_2008 = nifty.loc['2008-01-01':'2009-03-31']['Daily_Return'].dropna().values
+        w_covid = nifty.loc['2020-02-01':'2020-03-31']['Daily_Return'].dropna().values
+        w_rate = nifty.loc['2021-10-01':'2022-06-30']['Daily_Return'].dropna().values
+        
+        return {
+            "2008": w_2008,
+            "COVID": w_covid,
+            "Rate": w_rate
+        }
+    except Exception:
+        return {}
+
+def run_block_bootstrap(hist_returns, start_price, n_paths=1000, days=252, block_size=5):
+    if len(hist_returns) < block_size:
+        return np.full((days, n_paths), start_price)
+    
+    n_blocks = days // block_size + 1
+    paths = np.zeros((days, n_paths))
+    
+    for i in range(n_paths):
+        prices = [start_price]
+        for _ in range(n_blocks):
+            start_idx = np.random.randint(0, len(hist_returns) - block_size)
+            block = hist_returns[start_idx:start_idx + block_size]
+            for r in block:
+                prices.append(prices[-1] * (1 + r))
+        paths[:, i] = prices[1:days+1]
+    return paths
+
 def execute_query(query, params=()):
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -99,12 +139,12 @@ with tab_term:
             st.dataframe(df_pw, use_container_width=True, hide_index=True)
 
     st.sidebar.header("Illustrative Macro Overlays")
-    t_08 = st.sidebar.toggle("📉 2008 Crash (-40%)")
-    t_oil = st.sidebar.toggle("🛢️ Oil Shock (-15%)")
-    t_bub = st.sidebar.toggle("🫧 Bubble Burst (-25%)")
-    t_pan = st.sidebar.toggle("🦠 Pandemic (-30%)")
-    t_hyp = st.sidebar.toggle("💸 Hyperinflation (+50%)")
-    t_tech = st.sidebar.toggle("🚀 Tech Boom (+30%)")
+    t_08 = st.sidebar.toggle("📉 2008 GFC (Real Data)")
+    t_covid = st.sidebar.toggle("🦠 2020 COVID (Real Data)")
+    t_rate = st.sidebar.toggle("🏦 2022 Rate Hike (Real Data)")
+    t_oil = st.sidebar.toggle("🛢️ Oil Shock (-15% Formula)")
+    t_bub = st.sidebar.toggle("🫧 Bubble Burst (-25% Formula)")
+    t_hyp = st.sidebar.toggle("💸 Hyperinflation (+50% Formula)")
 
     df_assets = get_query("SELECT Ticker FROM predictions")
     if df_assets.empty:
@@ -152,17 +192,72 @@ with tab_term:
         iv5.metric("52W H/L Dist", f"H: {inv_t.get('Dist_52W_High', 0):.1f}%", delta=f"L: +{inv_t.get('Dist_52W_Low', 0):.1f}%", delta_color="off")
 
     if "Factors" in rep:
-        st.markdown("### 📊 Fama-French Factor Exposures & Sentiment")
+        st.markdown("### 📊 Company Snapshot & Sentiment")
         fac = rep["Factors"]
         f1, f2, f3, f4 = st.columns(4)
         mc = fac.get('Size_MCap', 0)
         mc_str = f"{sym}{mc/1e12:,.2f}T" if mc > 1e12 else f"{sym}{mc/1e9:,.2f}B" if mc > 1e9 else f"{sym}{mc/1e6:,.2f}M" if mc > 1e6 else "N/A"
-        f1.metric("Size (Market Cap)", mc_str)
-        f2.metric("Value (P/B Ratio)", f"{fac.get('Value_PB', 0):.2f}" if fac.get('Value_PB', 0) > 0 else "N/A")
-        f3.metric("Momentum (6M Return)", f"{fac.get('Momentum_6M', 0):.2f}%")
+        f1.metric("Market Cap", mc_str)
+        f2.metric("Price/Book", f"{fac.get('Value_PB', 0):.2f}" if fac.get('Value_PB', 0) > 0 else "N/A")
+        f3.metric("6M Price Momentum", f"{fac.get('Momentum_6M', 0):.2f}%")
         sentiment = rep.get("Sentiment_Score", 0)
         sentiment_label = "Bullish 🟢" if sentiment > 0.05 else "Bearish 🔴" if sentiment < -0.05 else "Neutral ⚪"
         f4.metric("News Sentiment Score", f"{sentiment:.2f}", delta=sentiment_label, delta_color="off")
+
+    # Compute MC based on toggles
+    crash_windows = get_crash_windows()
+    active_returns = []
+    active_macro_lines = {}
+    
+    lp = rep['Price']
+    
+    if t_08 and "2008" in crash_windows:
+        active_returns.extend(crash_windows["2008"])
+        cum = np.cumprod(1 + crash_windows["2008"][:252])
+        active_macro_lines["2008 GFC"] = lp * cum
+    if t_covid and "COVID" in crash_windows:
+        active_returns.extend(crash_windows["COVID"])
+        cum = np.cumprod(1 + crash_windows["COVID"][:252])
+        active_macro_lines["2020 COVID"] = lp * cum
+    if t_rate and "Rate" in crash_windows:
+        active_returns.extend(crash_windows["Rate"])
+        cum = np.cumprod(1 + crash_windows["Rate"][:252])
+        active_macro_lines["2022 Rate Hike"] = lp * cum
+        
+    if t_oil:
+        active_macro_lines["Oil Shock"] = [lp*(1 - 0.15*(i/30)) for i in range(30)]
+    if t_bub:
+        active_macro_lines["Bubble Burst"] = [lp*(1 - 0.25*(i/30)**0.8) for i in range(30)]
+    if t_hyp:
+        active_macro_lines["Hyperinflation"] = [lp*(1 + 0.50*(i/30)**2) for i in range(30)]
+        
+    if len(active_returns) == 0:
+        base_returns = df['Daily_Return'].dropna().values
+    else:
+        base_returns = np.array(active_returns)
+        
+    paths = run_block_bootstrap(base_returns, lp)
+    
+    st.markdown("### 🎲 Capital Deployment Scenarios (Monte Carlo)")
+    def get_percentiles(d):
+        return {
+            "Extreme Bad (5%)": np.percentile(paths[d-1], 5),
+            "Bad (25%)": np.percentile(paths[d-1], 25),
+            "Most Likely (50%)": np.percentile(paths[d-1], 50),
+            "Good (75%)": np.percentile(paths[d-1], 75),
+            "Extreme Good (95%)": np.percentile(paths[d-1], 95)
+        }
+    
+    scenarios = {
+        "7_Day": get_percentiles(7),
+        "1_Month": get_percentiles(30),
+        "1_Year": get_percentiles(252)
+    }
+    
+    sc_df = pd.DataFrame(scenarios).T
+    for col in sc_df.columns:
+        sc_df[col] = sc_df[col].apply(lambda x: f"{sym}{x:,.2f}")
+    st.dataframe(sc_df, use_container_width=True)
 
     st.markdown("### 📈 Quantitative Vision (Interactive)")
     recent = df.tail(200)
@@ -175,6 +270,10 @@ with tab_term:
     fig.add_trace(go.Scatter(x=g_dates, y=[rep['Price']]+rep['Ghost'], name='XGBoost 7D Proj', line=dict(color='#00ffcc', dash='dash', width=3)))
     if 'LSTM_Ghost' in rep and rep['LSTM_Ghost']:
         fig.add_trace(go.Scatter(x=g_dates, y=[rep['Price']]+rep['LSTM_Ghost'], name='LSTM 7D Proj', line=dict(color='#ff00ff', dash='dash', width=3)))
+
+    for name, line_data in active_macro_lines.items():
+        m_dates = [df['Date'].iloc[-1] + timedelta(days=i) for i in range(len(line_data))]
+        fig.add_trace(go.Scatter(x=m_dates, y=line_data, name=name, line=dict(dash='dot', width=2)))
 
     fig.update_layout(
         template="plotly_dark", height=600, margin=dict(l=0, r=0, t=30, b=0), xaxis_rangeslider_visible=False,
