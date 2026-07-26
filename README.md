@@ -1,17 +1,42 @@
-# 🟢 Stock Market Predictor: Sovereign Institutional Quant Terminal
+# 🟢 Indian Stock Market Predictor & ROI Engine
 
-An autonomous, locally-hosted quantitative analysis engine and terminal. Designed for absolute privacy and resource efficiency, this system executes machine learning pipelines, Monte Carlo simulations, and GenAI risk assessments entirely on local hardware without relying on external cloud APIs.
+An autonomous, locally-hosted quantitative analysis engine tailored specifically for the Indian Stock Market (NSE/BSE). Designed for absolute privacy and offline capabilities, this system predicts returns on investment (ROI), evaluates risks, and logs the rationale behind its picks.
 
-### 🧠 Core Architecture
-* **The Shadow Engine (Backend):** A daemonized Python worker running in detached `tmux` sessions. It features an hourly incremental data-lake sync and an automated XGBoost training loop that actively corrects its own hallucination margins using historical R² compatibility scoring.
-* **The Vision Suite (Frontend):** A secure, password-gated Streamlit dashboard displaying 6x3 capital deployment matrices, SHAP feature importance, and interactive Plotly charting.
-* **Local LLM Integration:** Integrates `Llama-3` via `Ollama` for a localized "AI Council" that reads the mathematical outputs and generates instant 3-sentence risk audits.
+## 📋 Prerequisites & Setup
 
-### ⚡ Technical Highlights
-* **Optimized for Constrained Hardware:** Engineered to run complex GARCH(1,1) volatility models, 1,200-tree XGBoost ensembles, and a 4.7GB LLM simultaneously on just **2 Cores and 8.7GB RAM**.
-* **Zero-Telemetry Security:** Built with a "Sovereign First" mindset. All data parsing, AI training, and inference happen locally. Zero data is sent to OpenAI or third-party clouds.
-* **Black Swan Stress Testing:** Features 6 dynamic macro-economic overlay models (2008 Crash, Oil War, Hyperinflation, etc.) modifying the 1,000-path Monte Carlo simulations.
-* **Sovereign Boot Sequence:** A custom bash ignition script that handles environment activation, daemon resurrection, and secure password gating before deploying the UI.
+To run this project on a fresh machine, you need:
+- **Python 3.8+** installed on your system.
+- **Git** (to clone/upload the repository).
+- (Linux/Mac) `bash` shell to run the boot script.
 
-### 🛠️ Tech Stack
-`Python 3` | `XGBoost` | `Streamlit` | `Ollama (Llama-3)` | `yfinance` | `Bash Scripting` | `Tmux`
+To launch the system:
+1. Make the boot script executable (if not already): `chmod +x stock_market_boot.sh`
+2. Run the ignition sequence: `./stock_market_boot.sh`
+   *(This automatically creates a virtual environment, installs dependencies, creates default assets, and launches both backend and frontend).*
+
+## 🧠 Background Working & Mechanics
+
+### 1. Offline Data & Background Sync (The Shadow Engine)
+- The backend (`stock_market_backend.py`) runs in the background and only fetches data when the **Indian Stock Market is open (9:15 AM - 3:30 PM IST, Mon-Fri)**.
+- If the market is closed, it pauses to save compute and API calls.
+- Once downloaded, data is stored in the `data_lake/` folder as `.csv` and `.json` files. 
+- You can fully view the dashboard offline; it will load the last synced data from the `data_lake/` folder automatically.
+
+### 2. "Why" A Stock Was Picked (The Logs & ROI)
+- **Algorithmic Audit**: The AI evaluates its own historical predictions. If the error margin is high, a hallucination alert is triggered.
+- **The 'Why' Factor (SHAP)**: The UI visually breaks down which technical indicators (e.g., SMA 50, Volatility) drove the AI's buy/sell decision.
+- **ROI Projections**: 1,000-path Monte Carlo simulations forecast your exact ROI based on your invested capital, including scenarios for severe market events (e.g., Pandemic, 2008 Crash).
+
+### 3. Modifying the Background Logic
+If you want to change the background update frequency or logic:
+- Open `stock_market_backend.py`.
+- Find `run_stock_market()` near the bottom.
+- You can adjust the `time.sleep(3600)` to change the hourly cycle, or modify the `market_open_time` / `market_close_time` logic to fit other timezones or custom intervals.
+
+## ⚡ Technical Highlights
+* **Optimized for Indian Stocks:** Defaults to major NSE indices and large-cap stocks like Reliance, TCS, and Infosys (`.NS` suffixes).
+* **Zero-Telemetry Security:** All data parsing and AI training happens locally. Zero data is sent to third-party APIs beyond the initial Yahoo Finance fetch.
+* **Capital Deployment Matrices:** Shows exactly how much a ₹10,000 investment would be worth under 6 different mathematical scenarios across 7 days, 1 month, and 1 year.
+
+## 🛠️ Tech Stack
+`Python 3` | `XGBoost` | `Streamlit` | `yfinance` | `Bash Scripting` | `pytz`
