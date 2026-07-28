@@ -52,6 +52,33 @@ def get_query(query, params=()):
     except Exception as e:
         return pd.DataFrame()
 
+def get_walk_accuracy(ticker: str) -> float | None:
+    """Return the most recent Walk30_Accuracy for a ticker, or None."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        row = conn.execute(
+            """SELECT Walk30_Accuracy FROM backtest_validation
+               WHERE Ticker = ? AND Walk30_Accuracy IS NOT NULL
+               ORDER BY Date DESC LIMIT 1""",
+            (ticker,)
+        ).fetchone()
+        conn.close()
+        return float(row[0]) if row else None
+    except Exception:
+        return None
+
+def get_hermes_memory(ticker: str) -> list:
+    """Read last 3 Hermes memory entries for a ticker from hermes_memory.json."""
+    try:
+        mem_path = os.path.join(DATA_DIR, "hermes_memory.json")
+        if not os.path.exists(mem_path):
+            return []
+        with open(mem_path) as f:
+            mem = json.load(f)
+        return mem.get(ticker, [])[-3:]
+    except Exception:
+        return []
+
 @st.cache_data(ttl=60)
 def get_json_blob(ticker):
     try:
@@ -323,14 +350,69 @@ with tab_term:
     # =========================================================
     if show_advanced:
         sig_color = "#00e676" if "BUY" in rep['Signal'] else "#ff1744" if "SELL" in rep['Signal'] else "#ffea00"
-        st.markdown(f"<div class='signal-box' style='background: {sig_color}; color: #111;'>{rep['Signal']}</div>", unsafe_allow_html=True)
 
-        c1, c2, c3, c4, c5 = st.columns(5)
+        # Overfitting / accuracy warning badges
+        overfit_flag   = rep.get("Overfit_Flag", False)
+        accuracy_flag  = rep.get("Accuracy_Flag", False)
+        ov_score       = rep.get("Overfit_Score", 1.0)
+        walk_acc       = rep.get("Walk30_Accuracy", None)
+
+        signal_display = rep['Signal']
+        if overfit_flag or accuracy_flag:
+            signal_display += "  \u26a0\ufe0f"
+
+        st.markdown(f"<div class='signal-box' style='background: {sig_color}; color: #111;'>{signal_display}</div>", unsafe_allow_html=True)
+
+        if overfit_flag:
+            st.warning(f"\u26a0\ufe0f **Overfitting detected** on {ticker}: holdout/train R\u00b2 ratio = {ov_score:.2f} (threshold 0.4). Signal has been conservatively capped at HOLD.")
+        if accuracy_flag and walk_acc is not None:
+            st.warning(f"\u26a0\ufe0f **Low signal accuracy** on {ticker}: {walk_acc:.0%} over last 30 cycles (threshold 45%). Signal has been conservatively capped at HOLD.")
+
+        c1, c2, c3, c4, c5, c6 = st.columns(6)
         c1.metric("Current Price", f"{sym}{rep['Price']:,.2f}", delta=f"{rep.get('Error',0):.1f}% Error")
         c2.metric("Sharpe Ratio", f"{rep.get('Sharpe', 0):.2f}")
         c3.metric("Max Drawdown", f"{rep.get('MaxDD', 0):.2f}%")
         c4.metric("Win Probability", f"{rep.get('Prob',0)}%")
         c5.metric("GARCH Volatility", f"{rep.get('Vol',0)*100:.2f}%")
+
+        # Signal accuracy badge
+        _live_acc = walk_acc if walk_acc is not None else get_walk_accuracy(ticker)
+        if _live_acc is not None and _live_acc != 0.5:
+            acc_pct   = _live_acc * 100
+            acc_color = "#00e676" if acc_pct >= 55 else "#ff1744" if acc_pct < 45 else "#ffea00"
+            c6.markdown(
+                f"<div style='text-align:center; padding:8px; border-radius:6px; background:{acc_color}22; border:1px solid {acc_color}; color:{acc_color}; font-weight:bold; font-size:1.2em;'>"
+                f"Signal Acc (30d)<br>{acc_pct:.0f}%</div>",
+                unsafe_allow_html=True
+            )
+        else:
+            c6.metric("Signal Acc (30d)", "Building...", delta="< 5 cycles")
+
+        # ── Hermes Analysis Panel ──────────────────────────────────────────
+        hermes_text = rep.get("Hermes_Analysis")
+        if hermes_text:
+            st.markdown("### \U0001f916 Hermes Agent Analysis")
+            st.markdown(
+                f"<div class='rationale-box'>\U0001f9e0 {hermes_text}</div>",
+                unsafe_allow_html=True
+            )
+            # Show last 3 memory entries for this ticker
+            mem_entries = get_hermes_memory(ticker)
+            if mem_entries:
+                with st.expander("\U0001f4c2 Hermes Memory (last 3 decisions)"):
+                    for e in reversed(mem_entries):
+                        outcome_str = e.get("outcome", "pending")
+                        color = "#00e676" if "\u2713" in outcome_str else "#ff1744" if "\u2717" in outcome_str else "#8892b0"
+                        st.markdown(
+                            f"<span style='color:{color}; font-weight:bold;'>[{e.get('ts','?')}]</span> "
+                            f"Signal=`{e.get('signal','?')}` | Outcome={outcome_str} | Sharpe={e.get('sharpe',0):.2f} | MaxDD={e.get('max_dd',0):.2f}%",
+                            unsafe_allow_html=True
+                        )
+        else:
+            with st.expander("\U0001f916 Hermes Agent (offline or first cycle)"):
+                st.info("Hermes LLM is not running or this is the first cycle. "
+                        "Install Ollama and run `ollama pull phi3:mini` then `ollama serve` to enable. "
+                        "See Part 5 of the User Guide for step-by-step instructions.")
 
         if "Investing_Tools" in rep:
             st.markdown("### 🏑️ Long-Term Investing Metrics (Total Return)")
@@ -419,6 +501,47 @@ with tab_term:
             dragmode='drawline'
         )
         st.plotly_chart(fig, use_container_width=True, config={'modeBarButtonsToAdd': ['drawline', 'drawopenpath', 'drawcircle', 'drawrect', 'eraseshape']})
+
+        # ── Backtest Equity Curve ──────────────────────────────────────────
+        st.markdown("### 📊 Backtest: Strategy vs Buy-and-Hold")
+        df_bt = get_query("SELECT Date, Hold_Equity, Strategy_Equity FROM backtests WHERE Ticker = ? ORDER BY Date", params=(ticker,))
+        if not df_bt.empty:
+            df_bt['Date'] = pd.to_datetime(df_bt['Date'])
+            fig_bt = go.Figure()
+            fig_bt.add_trace(go.Scatter(x=df_bt['Date'], y=df_bt['Hold_Equity'],
+                                        name='Buy & Hold', line=dict(color='#8892b0', width=2)))
+            fig_bt.add_trace(go.Scatter(x=df_bt['Date'], y=df_bt['Strategy_Equity'],
+                                        name='AI Strategy', line=dict(color='#00ffcc', width=2)))
+            fig_bt.update_layout(
+                template='plotly_dark', height=300,
+                margin=dict(l=0, r=0, t=20, b=0),
+                yaxis_title='Portfolio Value (₹)',
+                legend=dict(orientation='h', y=1.1)
+            )
+            st.plotly_chart(fig_bt, use_container_width=True)
+            # Accuracy context
+            _acc_val = walk_acc if (walk_acc is not None and walk_acc != 0.5) else get_walk_accuracy(ticker)
+            if _acc_val and _acc_val != 0.5:
+                st.caption(f"🎯 Walk-forward signal accuracy (last 30 cycles): **{_acc_val:.0%}** "
+                           f"| Holdout R²: **{rep.get('Compat',0):.1f}%** "
+                           f"| Train R²: **{rep.get('Train_R2',0):.1f}%** "
+                           f"| Overfit Score: **{rep.get('Overfit_Score',1):.2f}** (≥0.4 healthy)")
+        else:
+            st.info("Backtest data will appear after the first full backend cycle.")
+
+        # ── Walk-Forward Validation History ───────────────────────────────
+        df_wf = get_query(
+            """SELECT Date, Signal, Price_At_Signal, Price_Next_Day, Was_Correct, Walk30_Accuracy
+               FROM backtest_validation WHERE Ticker = ? ORDER BY Date DESC LIMIT 30""",
+            params=(ticker,)
+        )
+        if not df_wf.empty:
+            with st.expander("🗂️ Walk-Forward Signal Log (last 30 days)"):
+                df_wf['Was_Correct'] = df_wf['Was_Correct'].map({1: '✅ Hit', 0: '❌ Miss', None: '⏳ Pending'})
+                df_wf['Walk30_Accuracy'] = df_wf['Walk30_Accuracy'].apply(
+                    lambda x: f"{x:.0%}" if x is not None else '—'
+                )
+                st.dataframe(df_wf, use_container_width=True, hide_index=True)
 
 with tab_screen:
     st.header("🔎 Advanced Market Screener")

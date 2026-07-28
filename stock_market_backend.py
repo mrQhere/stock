@@ -5,7 +5,7 @@ import xgboost as xgb
 from arch import arch_model
 from sklearn.metrics import r2_score
 import json, os, time, warnings, logging, sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutTimeout
 
@@ -13,6 +13,14 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+# Hermes LLM Agent (optional — fails gracefully if ollama not installed/running)
+try:
+    from llm_agent import HermesAgent
+    _hermes = HermesAgent()
+except Exception as _hermes_err:
+    _hermes = None
+    print(f"[Hermes] Could not load agent: {_hermes_err}")
 
 warnings.filterwarnings('ignore')
 
@@ -33,6 +41,9 @@ logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format='%(asctime)s |
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
+    # WAL mode: allows simultaneous readers while backend writes — eliminates lock errors
+    conn.execute('PRAGMA journal_mode=WAL')
+    conn.execute('PRAGMA synchronous=NORMAL')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS historical_data 
                  (Ticker TEXT, Date TEXT, Open REAL, High REAL, Low REAL, Close REAL, Volume REAL, Dividends REAL, 
@@ -55,6 +66,14 @@ def init_db():
                  
     c.execute('''CREATE TABLE IF NOT EXISTS portfolio_trades 
                  (ID INTEGER PRIMARY KEY AUTOINCREMENT, Ticker TEXT, Quantity REAL, Buy_Price REAL, Trade_Date TEXT)''')
+
+    # Walk-forward backtest validation — one row per ticker per cycle
+    c.execute('''CREATE TABLE IF NOT EXISTS backtest_validation 
+                 (ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                  Ticker TEXT, Date TEXT, Signal TEXT,
+                  Price_At_Signal REAL, Price_Next_Day REAL,
+                  Was_Correct INTEGER,
+                  Walk30_Accuracy REAL)''')
     
     conn.commit()
     return conn
@@ -221,6 +240,92 @@ def train_engine(data: pd.DataFrame, ticker: str, hyperparams: dict):
     ghost_7d_lstm, lstm_r2 = train_lstm(X, y)
 
     return ghost_7d_xgb, ghost_7d_lstm, float(error), holdout_r2, lstm_r2, feat_dict, data
+
+def walk_forward_validate(ticker: str, current_price: float, current_signal: str, conn: sqlite3.Connection) -> float:
+    """
+    Every cycle: look up yesterday's recorded signal and compare its directional
+    prediction to today's actual closing price.  Log the outcome, then return
+    the rolling 30-day signal accuracy for this ticker.
+
+    Returns
+    -------
+    float
+        Accuracy in [0.0, 1.0].  Returns 0.5 (neutral) if fewer than 5
+        validation rows exist (not enough history yet).
+    """
+    try:
+        today_str = datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%d')
+
+        # --- Update yesterday's pending row with the actual next-day price ---
+        yesterday_row = conn.execute(
+            """SELECT ID, Signal, Price_At_Signal FROM backtest_validation
+               WHERE Ticker = ? AND Price_Next_Day IS NULL
+               ORDER BY Date DESC LIMIT 1""",
+            (ticker,)
+        ).fetchone()
+
+        if yesterday_row:
+            row_id, prev_signal, prev_price = yesterday_row
+            correct = 0
+            if prev_price and prev_price > 0:
+                direction_up = current_price > prev_price
+                if ("BUY" in prev_signal and direction_up) or \
+                   ("SELL" in prev_signal and not direction_up) or \
+                   ("HOLD" in prev_signal):   # HOLD counts as neutral-correct
+                    correct = 1
+            conn.execute(
+                """UPDATE backtest_validation
+                   SET Price_Next_Day = ?, Was_Correct = ?
+                   WHERE ID = ?""",
+                (current_price, correct, row_id)
+            )
+
+        # --- Insert today's signal as a new pending row ---
+        conn.execute(
+            """INSERT INTO backtest_validation
+               (Ticker, Date, Signal, Price_At_Signal, Price_Next_Day, Was_Correct, Walk30_Accuracy)
+               VALUES (?, ?, ?, ?, NULL, NULL, NULL)""",
+            (ticker, today_str, current_signal, current_price)
+        )
+
+        # --- Compute rolling 30-day accuracy ---
+        rows = conn.execute(
+            """SELECT Was_Correct FROM backtest_validation
+               WHERE Ticker = ? AND Was_Correct IS NOT NULL
+               ORDER BY Date DESC LIMIT 30""",
+            (ticker,)
+        ).fetchall()
+        conn.commit()
+
+        if len(rows) < 5:
+            return 0.5   # not enough data — return neutral
+
+        accuracy = sum(r[0] for r in rows) / len(rows)
+
+        # Back-fill accuracy on today's row
+        conn.execute(
+            """UPDATE backtest_validation SET Walk30_Accuracy = ?
+               WHERE Ticker = ? AND Date = ? AND Price_Next_Day IS NULL""",
+            (accuracy, ticker, today_str)
+        )
+        conn.commit()
+        return float(accuracy)
+
+    except Exception as e:
+        print(f"[{ticker}] walk_forward_validate error: {e}")
+        return 0.5
+
+
+def overfitting_score(holdout_r2: float, train_r2: float) -> float:
+    """
+    Return ratio of holdout R² to train R².
+    A value < 0.4 strongly suggests the model memorised the training set.
+    Returns 1.0 (healthy) if train_r2 is 0 or negative (edge case).
+    """
+    if train_r2 is None or train_r2 <= 0:
+        return 1.0
+    return float(holdout_r2 or 0) / float(train_r2)
+
 
 def precision_backtest(data, ticker, conn):
     bt = data.tail(180).copy()
@@ -480,7 +585,23 @@ def _process_ticker(tk, asset_type, subcat, data, hyperparams, conn, now):
     the caller handles FutTimeout and general Exception."""
     ghost_xgb, ghost_lstm, err, h_r2, lstm_r2, feats, data = train_engine(data, tk, hyperparams)
 
-    cols = [c for c in data.columns if c != 'Date']
+    # Train R² estimate: use the first 60% of training data as a proxy
+    try:
+        feat_cols = ['Close', 'SMA_20', 'SMA_50', 'SMA_200', 'MACD', 'RSI',
+                     'Volatility_20', 'BB_Width', 'BB_PB', 'ATR_14', 'Stoch_K', 'Stoch_D']
+        _X = data[feat_cols].iloc[:-1]
+        _y = data['Daily_Return'].shift(-1).dropna()
+        _X = _X.loc[_y.index]
+        _train_size = int(len(_X) * 0.6)
+        if _train_size > 50:
+            _mdl = xgb.XGBRegressor(n_estimators=100, random_state=42, n_jobs=-1)
+            _mdl.fit(_X.iloc[:_train_size], _y.iloc[:_train_size])
+            _train_r2 = max(0, r2_score(_y.iloc[:_train_size], _mdl.predict(_X.iloc[:_train_size]))) * 100
+        else:
+            _train_r2 = 0.0
+    except Exception:
+        _train_r2 = 0.0
+
     data['Date'] = data['Date'].astype(str)
     conn.execute("DELETE FROM historical_data WHERE Ticker = ?", (tk,))
     data.to_sql("historical_data", conn, if_exists="append", index=False)
@@ -501,6 +622,21 @@ def _process_ticker(tk, asset_type, subcat, data, hyperparams, conn, now):
     pr = ((ghost_xgb[-1] - price) / price) * 100
     sig = generate_signal(pr, sharpe, max_dd, market_mode, sentiment)
 
+    # ── Anti-overfitting guard ─────────────────────────────────────────────
+    # 1. Holdout-to-train R² ratio: if the model memorised training data, demote.
+    ov_score = overfitting_score(h_r2, _train_r2)
+    overfit_flag = ov_score < 0.4 and _train_r2 > 5   # only flag if train_r2 is meaningful
+
+    # 2. Walk-forward daily accuracy: record yesterday's outcome, get 30d rolling acc.
+    walk_acc = walk_forward_validate(tk, price, sig, conn)
+
+    # 3. If accuracy < 45% over last 30 signals AND we have enough data, cap at HOLD
+    accuracy_flag = walk_acc < 0.45 and walk_acc != 0.5   # 0.5 = neutral (not enough data)
+
+    if (overfit_flag or accuracy_flag) and "BUY" in sig:
+        sig = "HOLD ➖"   # demote — system is not trustworthy enough on this ticker
+        print(f"{YELLOW}[{tk}] Signal demoted to HOLD — overfit={overfit_flag} (score={ov_score:.2f}), accuracy_flag={accuracy_flag} ({walk_acc:.0%}).{RESET}")
+
     rep = {
         "Ticker": tk, "Category": asset_type, "Subcategory": subcat,
         "Price": price, "Signal": sig, "Ghost": ghost_xgb, "LSTM_Ghost": ghost_lstm,
@@ -510,13 +646,23 @@ def _process_ticker(tk, asset_type, subcat, data, hyperparams, conn, now):
         "Fundamentals": fundamentals,
         "Piotroski_Score": piotroski,
         "Compat": h_r2, "LSTM_Compat": lstm_r2, "Error": err,
+        "Train_R2": _train_r2, "Overfit_Score": ov_score, "Overfit_Flag": overfit_flag,
+        "Walk30_Accuracy": walk_acc, "Accuracy_Flag": accuracy_flag,
         "Vol": vol, "Prob": prob, "Sharpe": sharpe, "MaxDD": max_dd,
         "Market_Mode": market_mode,
         "Technical_Indicators": {"RSI": float(data['RSI'].iloc[-1]), "MACD": float(data['MACD'].iloc[-1]), "BB_PB": float(data['BB_PB'].iloc[-1]), "ATR_14": float(data['ATR_14'].iloc[-1]), "Stoch_K": float(data['Stoch_K'].iloc[-1])},
         "Investing_Tools": {"CAGR": cagr, "Sortino": sortino, "VaR_95": var_95, "Golden_Cross": "Golden Cross 🐂" if float(data['SMA_50'].iloc[-1]) > float(data['SMA_200'].iloc[-1]) else "Death Cross 🐻", "Dist_52W_High": ((price - float(data['High_52W'].iloc[-1])) / float(data['High_52W'].iloc[-1])) * 100 if float(data['High_52W'].iloc[-1]) > 0 else 0, "Dist_52W_Low": ((price - float(data['Low_52W'].iloc[-1])) / float(data['Low_52W'].iloc[-1])) * 100 if float(data['Low_52W'].iloc[-1]) > 0 else 0},
         "Last_Updated": now.strftime('%Y-%m-%d %H:%M IST'),
+        "Hermes_Analysis": None,   # filled below if Hermes is available
         "Stale": False,
     }
+
+    # ── Hermes LLM analysis (non-blocking, 30s timeout) ───────────────────
+    if _hermes and _hermes.is_available:
+        try:
+            rep["Hermes_Analysis"] = _hermes.analyze(rep)
+        except Exception as _he:
+            print(f"[{tk}] Hermes analyze error: {_he}")
 
     lb_entry = {"Asset": tk, "Category": f"{asset_type}/{subcat}", "Price": f"₹{price:,.2f}", "Signal": sig, "Vol": f"{vol*100:.2f}%", "Prob": f"{prob:.1f}%", "Sharpe": f"{sharpe:.2f}", "MaxDD": f"{max_dd:.2f}%"}
     return rep, lb_entry
@@ -600,6 +746,37 @@ def run_stock_market():
             pd.DataFrame(lb).to_sql("leaderboard", conn, if_exists="append", index=False)
             calculate_portfolio_weights(lb, conn)
             conn.commit()
+
+        # ── Hermes daily review & asset suggestions ───────────────────────
+        if _hermes and _hermes.is_available and lb:
+            try:
+                # Build price-change dict for this cycle vs previous cycle
+                price_changes = {}
+                for item in lb:
+                    tk_name = item.get("Asset", "")
+                    try:
+                        # Get the two most recent close prices from DB
+                        rows = conn.execute(
+                            "SELECT Close FROM historical_data WHERE Ticker = ? ORDER BY Date DESC LIMIT 2",
+                            (tk_name,)
+                        ).fetchall()
+                        if len(rows) >= 2:
+                            price_changes[tk_name] = (rows[0][0] - rows[1][0]) / rows[1][0] * 100
+                    except Exception:
+                        pass
+
+                review_text = _hermes.daily_review(lb, price_changes)
+                print(f"\n{CYAN}[Hermes Daily Review]\n{review_text}{RESET}")
+
+                suggestions = _hermes.suggest_asset_changes(lb)
+                print(f"\n{CYAN}[Hermes Asset Suggestions]\n{suggestions}{RESET}")
+
+                # Save review to a log file
+                review_path = os.path.join(LOG_DIR, "hermes_review.log")
+                with open(review_path, "a") as rf:
+                    rf.write(f"\n[{now.strftime('%Y-%m-%d %H:%M')}]\nREVIEW: {review_text}\nSUGGESTIONS: {suggestions}\n")
+            except Exception as _rev_err:
+                print(f"{YELLOW}[Hermes] Daily review error: {_rev_err}{RESET}")
 
         open(os.path.join(DATA_DIR, ".ready"), "w").close()
         wait = 3600 if market_live else 1800

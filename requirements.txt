@@ -13,3 +13,7 @@ optuna==3.6.1
 vaderSentiment==3.3.2
 fastapi==0.115.12
 uvicorn==0.34.3
+# Hermes LLM agent — communicates with a locally running Ollama server
+# Install Ollama first: https://ollama.com/download
+ollama>=0.4.7
+httpx>=0.27.0

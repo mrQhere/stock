@@ -8,7 +8,10 @@
 
 ## Table of Contents
 
-### Part 1 — Beginner Setup (Start Here)
+### Part 0 — Absolute Beginner Onboarding (Start Here if New to Coding)
+0. [Complete Beginner Setup: From Chrome to Running System](#0-complete-beginner-setup-from-chrome-to-running-system)
+
+### Part 1 — Standard Setup
 1. [What This Tool Does](#1-what-this-tool-does)
 2. [System Requirements](#2-system-requirements)
 3. [First-Time Installation (Copy-Paste)](#3-first-time-installation-copy-paste)
@@ -42,9 +45,256 @@
 25. [REST API Reference](#25-rest-api-reference)
 26. [Troubleshooting Guide](#26-troubleshooting-guide)
 
+### Part 5 — Hermes LLM Agent
+27. [What Hermes Is and Why It Gets Better Over Time](#27-what-hermes-is-and-why-it-gets-better-over-time)
+28. [Installing Ollama + phi3:mini (3 Commands)](#28-installing-ollama--phi3mini-3-commands)
+29. [How the Memory System Works](#29-how-the-memory-system-works)
+30. [Reading the Hermes Analysis Panel](#30-reading-the-hermes-analysis-panel)
+
+### Part 6 — Daily Backtest & Anti-Overfitting
+31. [Walk-Forward Validation: What It Is and Why It Matters](#31-walk-forward-validation-what-it-is-and-why-it-matters)
+32. [The 30-Day Rolling Signal Accuracy Metric](#32-the-30-day-rolling-signal-accuracy-metric)
+33. [Anti-Overfitting Guards](#33-anti-overfitting-guards)
+34. [How the System Prevents Itself Getting Worse](#34-how-the-system-prevents-itself-getting-worse)
+
 ---
 
-# PART 1 — BEGINNER SETUP
+# PART 0 — ABSOLUTE BEGINNER ONBOARDING
+
+## 0. Complete Beginner Setup: From Chrome to Running System
+
+> This section is written for someone who has **never used a terminal**. If you are already comfortable with Git and Python, skip to Part 1.
+
+---
+
+### 0.1 What You Are Going to Install
+
+| Software | What it does | Size |
+|---|---|---|
+| Git | Downloads the code from GitHub | ~50 MB |
+| Python 3.12 | Runs the code | ~100 MB |
+| Ollama (optional) | Runs the Hermes AI brain locally | ~50 MB app + ~2.3 GB model |
+| The repo itself | The actual trading terminal | ~5 MB |
+
+---
+
+### 0.2 What Is a "Terminal"?
+
+A terminal (also called a shell, command prompt, or console) is a text window where you type commands. You will use it throughout this guide.
+
+**On Windows** → search "Windows PowerShell" in the Start menu. Right-click → "Run as Administrator".
+> [!IMPORTANT]
+> Windows users: This project requires **WSL2** (Windows Subsystem for Linux). Follow Step 0.3 first.
+
+**On macOS** → press `Cmd + Space`, type "Terminal", press Enter.
+
+**On Linux (Ubuntu/Debian)** → press `Ctrl + Alt + T`.
+
+---
+
+### 0.3 Windows Only: Install WSL2
+
+This step gives Windows users a real Linux environment. Skip if on macOS or Linux.
+
+Open PowerShell **as Administrator** and run:
+```powershell
+wsl --install
+```
+This installs Ubuntu. Restart your computer when prompted. After restarting, Ubuntu will open and ask you to create a username and password. **Remember this password** — you will need it.
+
+From now on, use the **Ubuntu terminal** (not PowerShell) for all commands in this guide.
+
+---
+
+### 0.4 Install Git
+
+**Check if already installed:**
+```bash
+git --version
+```
+If you see `git version 2.x.x`, skip this step.
+
+**Linux / WSL2 (Ubuntu):**
+```bash
+sudo apt update && sudo apt install -y git
+```
+
+**macOS:**
+```bash
+# Install Homebrew first if not present:
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+# Then install git:
+brew install git
+```
+
+**Verify:**
+```bash
+git --version
+# Expected: git version 2.x.x
+```
+
+---
+
+### 0.5 Install Python 3.12
+
+**Check if already installed:**
+```bash
+python3 --version
+```
+If you see `Python 3.12.x`, skip this step.
+
+**Linux / WSL2 (Ubuntu):**
+```bash
+sudo apt update
+sudo apt install -y software-properties-common
+sudo add-apt-repository -y ppa:deadsnakes/ppa
+sudo apt install -y python3.12 python3.12-venv python3.12-dev
+```
+
+**macOS:**
+```bash
+brew install python@3.12
+```
+
+**Verify:**
+```bash
+python3.12 --version
+# Expected: Python 3.12.x
+```
+
+---
+
+### 0.6 What Is a GitHub Repository?
+
+GitHub is a website that stores code. A "repository" (repo) is a folder of code. Cloning means downloading a copy to your computer.
+
+The `git clone` command does the download:
+```bash
+git clone https://github.com/mrQhere/stock.git
+```
+This creates a folder called `stock/` in your current directory.
+
+---
+
+### 0.7 Clone and Enter the Repo
+
+```bash
+# Navigate to your home directory first (safe default location)
+cd ~
+
+# Clone the repo
+git clone https://github.com/mrQhere/stock.git
+
+# Enter the folder
+cd stock
+
+# Verify you are in the right place — you should see these files
+ls
+# Expected output includes: stock_market_backend.py, stock_market_ui.py, etc.
+```
+
+---
+
+### 0.8 What Is an API Key?
+
+An API key is a secret password that identifies your application when it calls a web service. In this system:
+
+- **`APP_PASSWORD`** — the password to log into the dashboard in your browser
+- **`QUANT_API_KEY`** — a key you invent yourself to protect the REST API endpoints (port 8000)
+
+You **make up** both of these values yourself. They do not need to be registered anywhere. Pick something hard to guess.
+
+**Good example:** `my-quant-key-2026-Xr7q`
+**Bad example:** `password` or `1234`
+
+#### Create your password file:
+```bash
+# While inside the stock/ folder:
+mkdir -p .streamlit
+cat > .streamlit/secrets.toml << 'EOF'
+APP_PASSWORD = "replace_with_your_chosen_password"
+EOF
+```
+
+#### Set your API key (persists across reboots):
+```bash
+echo 'export QUANT_API_KEY="replace_with_your_chosen_api_key"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+> [!NOTE]
+> The `.streamlit/secrets.toml` file is in `.gitignore`. It will never be uploaded to GitHub even if you push changes.
+
+---
+
+### 0.9 Install Ollama (Optional but Recommended)
+
+Ollama lets you run AI language models locally — no internet, no subscriptions. The Hermes agent uses it to explain signals in plain English.
+
+**Linux / WSL2:**
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+**macOS:**
+Download the installer from [https://ollama.com/download](https://ollama.com/download) and double-click it.
+
+**Download the AI model (phi3:mini, ~2.3 GB):**
+```bash
+ollama pull phi3:mini
+```
+This takes 5–15 minutes depending on your internet speed. Do it once; the model is cached permanently.
+
+**Verify Ollama is running:**
+```bash
+ollama list
+# Expected: shows phi3:mini in the list
+```
+
+> [!NOTE]
+> Ollama starts automatically on most systems. If Hermes says "offline", manually start it with `ollama serve` in a separate terminal.
+
+---
+
+### 0.10 Run the System
+
+```bash
+# Make the boot script executable (one-time)
+chmod +x stock_market_boot.sh
+
+# Launch everything
+./stock_market_boot.sh
+```
+
+The script will:
+1. Create a Python virtual environment (`jarvis_env/`)
+2. Install all dependencies (~5–20 minutes on first run)
+3. Launch the backend data engine in the background
+4. Show a progress bar while tickers are compiled
+5. Ask you to choose Investor or Advanced mode
+6. Open the dashboard in your browser at `http://localhost:8501`
+
+> **First run takes 5–20 minutes.** After that, subsequent starts are fast because data is cached.
+
+---
+
+### 0.11 Summary Checklist for New Users
+
+```
+✅ WSL2 installed (Windows only)
+✅ Git installed and verified
+✅ Python 3.12 installed and verified
+✅ Repo cloned to ~/stock/
+✅ .streamlit/secrets.toml created with your password
+✅ QUANT_API_KEY exported to ~/.bashrc
+✅ Ollama installed and phi3:mini pulled (optional but recommended)
+✅ ./stock_market_boot.sh executed
+✅ Dashboard opened in browser
+```
+
+---
+
+# PART 1 — STANDARD SETUP
 
 ## 1. What This Tool Does
 
@@ -1015,13 +1265,233 @@ The system falls back gracefully — only the XGBoost ghost is shown. No error i
 
 ---
 
+# PART 5 — HERMES LLM AGENT
+
+## 27. What Hermes Is and Why It Gets Better Over Time
+
+Hermes is a local AI language model embedded directly in the trading terminal. It reads every ticker's full prediction JSON (signal, Sharpe, Max Drawdown, Piotroski score, sentiment, 7-day ghost path) and writes a 3-sentence plain-English analysis visible in the dashboard.
+
+**Why it gets better:** Hermes maintains a rolling memory file (`data_lake/hermes_memory.json`). Every time it analyses a ticker, it logs the signal, risk metrics, and its own commentary. On the next cycle, that history is included in the prompt. The model can see whether its previous calls were correct and adjust its commentary accordingly.
+
+**What "self-improving" means here:** The model weights do not change (phi3:mini is a fixed model). What improves is the **context** passed to the model — richer memory of past decisions means more calibrated, less generic commentary over time.
+
+---
+
+## 28. Installing Ollama + phi3:mini (3 Commands)
+
+Ollama is a free, open-source runtime that downloads and serves AI models locally. No accounts, no API keys, no cloud.
+
+**Step 1 — Install Ollama:**
+
+Linux / WSL2:
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+macOS: download from [https://ollama.com/download](https://ollama.com/download) and install the `.dmg`.
+
+**Step 2 — Download the model:**
+```bash
+ollama pull phi3:mini
+```
+Output will show a progress bar. This is a one-time download (~2.3 GB). The model is cached in `~/.ollama/`.
+
+**Step 3 — Verify:**
+```bash
+ollama list
+# You should see: phi3:mini  ...
+```
+
+**If Ollama doesn't start automatically:**
+```bash
+ollama serve
+# Leave this terminal open. Ollama listens on http://localhost:11434
+```
+
+> [!NOTE]
+> The backend (`stock_market_backend.py`) checks `http://localhost:11434` on startup. If Ollama is not running, Hermes silently disables itself and the rest of the system runs normally.
+
+### Alternative Models
+
+If you have more RAM, you can use a more capable model:
+
+| Model | RAM Required | Command |
+|---|---|---|
+| phi3:mini | ~2 GB | `ollama pull phi3:mini` |
+| gemma2:2b | ~2 GB | `ollama pull gemma2:2b` |
+| mistral:7b | ~5 GB | `ollama pull mistral:7b` |
+| llama3.1:8b | ~6 GB | `ollama pull llama3.1:8b` |
+
+To switch models, edit `llm_agent.py` and change:
+```python
+DEFAULT_MODEL = "phi3:mini"   # ← change to your model name
+```
+
+---
+
+## 29. How the Memory System Works
+
+All Hermes memory is stored in `data_lake/hermes_memory.json`. This file is created automatically on the first Hermes analysis.
+
+**Structure:**
+```json
+{
+  "RELIANCE.NS": [
+    {
+      "ts": "2026-07-28T10:00",
+      "signal": "BUY ↗️",
+      "sharpe": 1.23,
+      "max_dd": -14.5,
+      "prob": 67.2,
+      "note": "Market positioning appears constructive...",
+      "outcome": "✓ +1.2%"
+    }
+  ]
+}
+```
+
+**How outcomes are set:** At the end of every cycle, `daily_review()` compares each ticker's previous signal to today's actual price change. If a BUY signal was followed by an up-day, the outcome is marked `✓ +x.x%`. If a SELL was followed by an up-day (wrong call), it is marked `✗ +x.x%`.
+
+**Memory cap:** The file keeps the 200 most recent entries across all tickers. Older entries are pruned automatically. The last 5 entries per ticker are shown in the Hermes Memory expander in the UI.
+
+**Reading the memory in the UI:** In Advanced Mode, expand the "📂 Hermes Memory (last 3 decisions)" box under the Hermes Analysis panel. Green = past call was correct, red = past call was wrong.
+
+---
+
+## 30. Reading the Hermes Analysis Panel
+
+The Hermes panel appears in **Advanced Mode** below the signal box.
+
+```
+🤖 Hermes Agent Analysis
+┌─────────────────────────────────────────────────────────┐
+│ 🧠 Market positioning for RELIANCE.NS is constructive   │
+│ with the stock trading above its 50-day SMA in BULL     │
+│ mode. Key risk is the MaxDD of -18.2%, which means a    │
+│ significant drawdown has occurred historically. The     │
+│ Piotroski score of 7/9 confirms strong fundamentals     │
+│ that support the BUY signal.                            │
+└─────────────────────────────────────────────────────────┘
+```
+
+**If the panel shows "Hermes Agent (offline or first cycle)":** Either Ollama is not running, or this is the first backend cycle (analysis is generated during compute, not on UI load).
+
+**Hermes daily review:** At the end of every backend cycle, Hermes writes a review of all signal outcomes to `logs/hermes_review.log`. Check this file to see what the system learned each day:
+```bash
+tail -50 logs/hermes_review.log
+```
+
+**Asset suggestions:** Hermes also generates weekly suggestions for tickers that are consistently wrong (< 30% accuracy over 5+ cycles, negative Sharpe). These are printed in the backend log and saved to `hermes_review.log`. Hermes **never** automatically deletes tickers — it only suggests. You decide.
+
+---
+
+# PART 6 — DAILY BACKTEST & ANTI-OVERFITTING
+
+## 31. Walk-Forward Validation: What It Is and Why It Matters
+
+Standard backtesting trains a model on historical data and then tests it on the same data — this almost always shows great results but means nothing for real performance.
+
+**Walk-forward validation** is different: every single day, the system:
+1. Records today's signal and price in the `backtest_validation` table
+2. On the *next* cycle, checks what the price actually did
+3. Marks the signal as a hit or miss
+4. Computes a rolling 30-day accuracy from those real outcomes
+
+This is equivalent to paper-trading your own system and scoring it honestly every day.
+
+**Why "walk-forward"?** The validation window *walks* forward in time — it always uses the most recent 30 completed signals. As the market changes, the accuracy reflects current conditions, not historical cherry-picked periods.
+
+**Where to see it:** Advanced Mode → "🗂️ Walk-Forward Signal Log (last 30 days)" expander.
+
+---
+
+## 32. The 30-Day Rolling Signal Accuracy Metric
+
+The **Signal Acc (30d)** badge appears in the 6-metric row in Advanced Mode:
+
+| Color | Accuracy | Meaning |
+|---|---|---|
+| 🟢 Green | ≥ 55% | Model is performing above random on this ticker |
+| 🟡 Yellow | 45–55% | Marginal — close to random, monitor closely |
+| 🔴 Red | < 45% | Model is performing worse than random — signals demoted to HOLD |
+| ⬜ "Building..." | < 5 cycles | Not enough history yet |
+
+**What counts as a "hit":**
+- `BUY` or `STRONG BUY` → next-day price goes up: ✅ hit
+- `SELL` or `STRONG SELL` → next-day price goes down: ✅ hit
+- `HOLD` → always counted as neutral-correct (conservative choice)
+
+**Important:** HOLD signals never count as misses. This means tickers that are demoted to HOLD (by the overfitting guard) won't drag down their own accuracy score.
+
+---
+
+## 33. Anti-Overfitting Guards
+
+Overfitting means the model memorised the training data patterns instead of learning generalisable rules. An overfit model looks great on historical data but fails in live trading.
+
+The system applies **two independent guards**:
+
+### Guard 1: Holdout-to-Train R² Ratio
+
+Every cycle, the backend computes two R² scores:
+- **Train R²**: how well the model fits the first 60% of data (training set)
+- **Holdout R²**: how well it predicts the most recent 20% (data it never saw)
+
+$$\text{Overfit Score} = \frac{\text{Holdout } R^2}{\text{Train } R^2}$$
+
+| Score | Interpretation |
+|---|---|
+| ≥ 0.4 | Healthy — model generalises well |
+| 0.2–0.4 | Mild concern — monitor |
+| < 0.4 with Train R² > 5% | **Overfit detected → signal demoted to HOLD** |
+
+### Guard 2: Walk-Forward Accuracy
+
+If the 30-day rolling signal accuracy falls below **45%** AND there are at least 5 completed validation rows, the signal is capped at HOLD automatically.
+
+**Combined logic:**
+```python
+if (overfit_flag or accuracy_flag) and "BUY" in sig:
+    sig = "HOLD ➖"   # conservative demotion
+```
+
+Both guards only demote BUY signals, never SELL. A system that is wrong in the bullish direction is more harmful than one that is cautiously neutral.
+
+---
+
+## 34. How the System Prevents Itself Getting Worse
+
+The full feedback loop:
+
+```
+Day 1:  Signal generated → recorded in backtest_validation
+Day 2:  Actual price checked → outcome logged → accuracy updated
+        Hermes reads outcome in memory → adjusts next commentary
+        If accuracy < 45% → signal auto-demoted to HOLD
+        If overfit score < 0.4 → signal auto-demoted to HOLD
+Weekly: Hermes suggest_asset_changes() flags persistent losers
+        (suggestions only — you decide whether to remove them)
+Periodic: Run hyperparameter_tuning.py to retune XGBoost params
+          Updated hyperparams.json hot-reloaded on next cycle
+```
+
+**The key principle:** the system is pessimistic by design. False negatives (missing a good trade) are preferred over false positives (recommending a bad trade). Every guard errs on the side of HOLD, never on the side of BUY.
+
+**Backtest chart:** The "📊 Backtest: Strategy vs Buy-and-Hold" chart shows the last 180 days of the strategy equity curve versus a simple buy-and-hold benchmark. Below the chart, the accuracy caption shows:
+- Walk-forward accuracy (today's real accuracy, not backtest)
+- Holdout R² and Train R² (model quality)
+- Overfit Score (≥ 0.4 = healthy)
+
+---
+
 ## Appendix: Key File Reference
 
 | File | Purpose |
 |---|---|
 | `stock_market_boot.sh` | Orchestrator: env setup, boot order, progress bar, mode selection |
-| `stock_market_backend.py` | Shadow engine: data fetch, ML training, signals, DB writes |
-| `stock_market_ui.py` | Streamlit dashboard: investor + advanced panels, portfolio tracker |
+| `stock_market_backend.py` | Shadow engine: data fetch, ML training, signals, walk-forward validation, DB writes |
+| `stock_market_ui.py` | Streamlit dashboard: investor + advanced panels, Hermes panel, backtest chart |
+| `llm_agent.py` | Hermes LLM agent: memory, analyze, daily_review, suggest_asset_changes |
 | `api_server.py` | FastAPI REST server with X-API-Key auth |
 | `hyperparameter_tuning.py` | Optuna Bayesian search for XGBoost params |
 | `assets.json` | Ticker list by category and subcategory |
@@ -1029,9 +1499,12 @@ The system falls back gracefully — only the XGBoost ghost is shown. No error i
 | `secrets.toml.example` | Template for `.streamlit/secrets.toml` |
 | `data_lake/quant.db` | SQLite state manager (auto-created) |
 | `data_lake/hyperparams.json` | Tuned XGBoost params (auto-created by tuner) |
+| `data_lake/hermes_memory.json` | Hermes per-ticker rolling memory (auto-created) |
 | `data_lake/.ready` | Sentinel file written after each full cycle |
 | `logs/backend.log` | Backend stdout/stderr |
 | `logs/picks.log` | Structured signal log with timestamps |
+| `logs/hermes.log` | Hermes per-ticker analysis log |
+| `logs/hermes_review.log` | Hermes daily cycle review and asset suggestions |
 
 ---
 
