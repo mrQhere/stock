@@ -2,96 +2,173 @@
 
 # 🟢 Stock Market Predictor & Institutional Quant Terminal
 
-**An autonomous, locally-hosted quantitative analysis engine tailored for Global Equities, Crypto, and Forex.**
+**An autonomous, locally-hosted quantitative analysis engine for Global Equities, ETFs, Crypto, Forex, and Indices.**
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![XGBoost](https://img.shields.io/badge/AI-XGBoost-orange.svg)](https://xgboost.readthedocs.io/)
 [![PyTorch](https://img.shields.io/badge/DeepLearning-PyTorch-red.svg)](https://pytorch.org/)
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-009688.svg)](https://fastapi.tiangolo.com/)
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B.svg)](https://streamlit.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![GitHub Repository](https://img.shields.io/badge/GitHub-mrQhere%2Fstock-181717.svg?logo=github)](https://github.com/mrQhere/stock)
 
-Designed for researchers and quants, this system fuses traditional tree-based models (XGBoost) with deep sequence learning (LSTM PyTorch), NLP sentiment analysis, and fundamental factor models (Fama-French) into a completely offline, local-first SQLite architecture.
+Designed for researchers and long-term investors, this system fuses tree-based gradient boosting (XGBoost), deep sequence learning (LSTM/PyTorch), NLP sentiment analysis, Piotroski F-Score fundamental screening, and historical block-bootstrap Monte Carlo into a fully offline, local-first SQLite architecture.
 
 > [!CAUTION]
-> **NOT FINANCIAL ADVICE.** This is a highly experimental research tool. Do not deploy real capital trusting these predictions. Markets are fundamentally stochastic, and ML models are highly susceptible to overfitting and black-swan regime changes. 
-
-![Terminal Overview Demo](assets/demo.gif)
-*[Watch the full walkthrough on YouTube](https://youtube.com/your-video-link-here)*
+> **NOT FINANCIAL ADVICE.** This is an experimental research tool. Do not deploy real capital based on these predictions. Markets are stochastic; ML models are susceptible to overfitting and black-swan regime changes.
 
 </div>
 
 ---
 
 ## 📑 Table of Contents
+- [What's New](#-whats-new)
 - [Core Architecture](#-core-architecture)
-- [Why We Built This & Setup](#-why-we-built-this--setup)
-- [Advanced Analytics Engine](#-advanced-analytics-engine)
+- [Two Modes: Investor & Advanced](#-two-modes-investor--advanced)
+- [Setup & Installation](#-setup--installation)
+- [Security: Passwords & API Keys](#-security-passwords--api-keys)
 - [Tech Stack](#-tech-stack)
 
 ---
 
+## 🆕 What's New
+
+| Feature | Description |
+|---|---|
+| **Investor Mode** | Clean dashboard: price snapshot, Piotroski F-Score, full Fundamentals panel, SIP/Goal Calculator — no trading noise |
+| **Advanced Mode** | Full quant terminal: AI signals, 7-day projections, Monte Carlo, Sharpe/Drawdown, backtest chart |
+| **Piotroski F-Score** | 9-point fundamental health check from real financial statements via yfinance |
+| **SIP Calculator** | Goal projections using the ticker's own 5-year CAGR — no hardcoded assumptions |
+| **Per-ticker Timeout** | `ThreadPoolExecutor` wraps all compute; one slow ticker can't stall the cycle |
+| **Stale-data Fallback** | Failed tickers show previous cycle data with a ⚠ badge instead of disappearing |
+| **Real Crash Windows** | 2008 GFC, 2020 COVID, 2022 Rate Hike — actual ^NSEI daily return sequences |
+| **CPU-only PyTorch** | Installed from `download.pytorch.org/whl/cpu` — no multi-GB CUDA download |
+| **Pinned deps** | All dependencies pinned; `fastapi==0.115.12`, `uvicorn==0.34.3` |
+
+---
+
 ## 🏗 Core Architecture
-- **Dual AI Engine:** Simultaneously trains XGBoost (tree-based) and PyTorch LSTM (deep sequence learning) models to contrast standard factor logic vs deep time-series patterns.
-- **Embedded SQLite Data Lake:** All data, hyperparameter tuning results, and AI states are fully centralized in a local relational database (`quant.db`). This ensures that the platform remains entirely self-contained without requiring external cloud databases.
-- **Headless FastAPI Layer:** A fully standalone API server allows external programmatic access to the database's ML outputs. It is secured via strict `X-API-Key` headers to ensure your data remains completely private.
-- **Optuna Auto-Tuning:** A dedicated background daemon dynamically optimizes XGBoost hyperparameters per-ticker using Bayesian search, preventing the model from becoming stale as market regimes shift over time.
+
+- **Dual AI Engine:** XGBoost (tree-based non-linear thresholds) + PyTorch LSTM (deep sequence autoregression) trained in parallel.
+- **Embedded SQLite Data Lake:** All predictions, hyperparameters, and backtest results live in `data_lake/quant.db`. No cloud DB required.
+- **Fault-tolerant Backend:** Per-ticker 120s timeout via `ThreadPoolExecutor`. On timeout or error, the previous cycle's result is re-served with a stale flag — no ticker ever vanishes silently.
+- **FastAPI Headless Layer:** Secured via `X-API-Key` header on all `/api/v1/*` routes. The root `GET /` health check is exempt.
+- **Optuna Auto-Tuning:** Background daemon runs Bayesian hyperparameter search per ticker, hot-reloading results into the next cycle.
 
 ---
 
-## 🚀 Why We Built This & Setup
+## 🧭 Two Modes: Investor & Advanced
 
-Most retail trading platforms hide their algorithms or charge exorbitant fees for basic quantitative metrics. We built the **Stock Market Predictor** as an open-source, local-first alternative for researchers who want full transparency into the data pipeline, model weights, and mathematical logic driving the predictions.
+The boot script prompts you to choose before launching:
 
-### Prerequisites
-- **Python 3.10+** (Required for PyTorch and FastAPI dependencies)
-- **Git**
-- **NVIDIA GPU (Optional but recommended for PyTorch/CUDA acceleration)**
+```
+Select mode:
+  1) Simple Long-Term Investor   (fundamentals, Piotroski, SIP calculator)
+  2) Advanced Trader             (all panels + signal, Monte Carlo, backtest)
+```
 
-### Installation
-1. **Clone & Boot:**
-   ```bash
-   chmod +x stock_market_boot.sh
-   ./stock_market_boot.sh
-   ```
-   > **Note:** The boot script handles virtual environment creation, pip installations (including heavy PyTorch binaries), and spins up both the ML backend and the FastAPI server.
+You can also flip the **Advanced Mode** toggle in the sidebar at any time — no restart needed. The backend always computes all data; mode is purely a UI rendering decision.
 
-2. **Security & Access (Passwords & API Keys):**
-   The terminal and API are strictly protected by an authentication wall to prevent unauthorized access. You must define your credentials before use.
-   - **For the UI**: Create a file at `.streamlit/secrets.toml` with your password: `APP_PASSWORD = "your_secure_password"`. *(This file is ignored by `.gitignore` to ensure your password is never leaked)*.
-   - **For the API**: Set the `QUANT_API_KEY` environment variable on the server before launching. All API requests (except the root health check) must include this key in the `X-API-Key` header.
-     - Example: `export QUANT_API_KEY="your_secure_api_key"`
-     - Usage: `curl -H "X-API-Key: your_secure_api_key" http://localhost:8000/api/v1/predictions`
-   - You can refer to the provided `secrets.toml.example` file for a template configuration.
+**Investor Mode shows (always visible):**
+- Price Snapshot: current price, 1Y return, 5Y CAGR, dividend yield
+- Company Snapshot: Market Cap, P/B, 6M momentum, news sentiment
+- Fundamentals table: 12 metrics with plain-English explanations per row
+- Piotroski F-Score: 0–9 score with colour coding and explanation
+- SIP & Goal Calculator: monthly SIP → projected corpus using real CAGR
+
+**Advanced Mode adds:**
+- AI Signal (STRONG BUY → STRONG SELL) with risk gate logic
+- Sharpe, Max Drawdown, Win Probability, GARCH Volatility
+- XGBoost + LSTM 7-day price projections
+- Monte Carlo Capital Deployment Scenarios (7D / 1M / 1Y percentile table)
+- Black Swan scenario overlays (real crash return data + formula toggles)
+- Risk Parity Portfolio weights
 
 ---
 
-## 🧠 Advanced Analytics Engine
+## 🚀 Setup & Installation
 
-### 1. Market Screener & Snapshot Metrics
-The system features a lightning-fast local screener that queries `quant.db` without hitting external API rate limits. It extracts critical snapshot metrics directly from the company's balance sheet, including Market Cap, Price/Book Ratio, and 6M Price Momentum, for advanced portfolio construction and risk parity weighting.
+> **Prerequisites:** Python 3.12+, Git, bash (Linux/macOS). Windows users: use WSL2.
 
-### 2. Natural Language Processing (NLP) Sentiment
-The backend continuously scrapes real-time financial headlines for target tickers using `yfinance` and parses them through a `vaderSentiment` NLP pipeline to calculate a quantitative Bullish/Bearish polarity score. This score acts as an algorithmic risk gate, immediately blocking anomalous BUY signals if the overall market sentiment is overtly bearish.
+```bash
+# 1. Clone the repository
+git clone https://github.com/mrQhere/stock.git
+cd stock
 
-### 3. Historical Block Bootstrap & Real Crash Windows
-Traditional Monte Carlo simulations falsely assume market returns follow a smooth Gaussian bell curve, completely ignoring the fat-tailed reality of black swan events. To solve this, the Stock Market Predictor uses a **5-day Historical Block Bootstrap**. 
-- It simulates thousands of 252-day forward paths by randomly sampling 5-day chunks from the ticker's *actual* historical returns, perfectly preserving the asset's true volatility clustering and autocorrelation.
-- **Real Black Swan Data:** The UI dynamically pulls real daily crash data from the `^NSEI` benchmark index for the 2008 Global Financial Crisis, the 2020 COVID Crash, and the 2022 Rate Hike Selloff.
-- **Dynamic Blending:** When you toggle a Black Swan scenario in the UI, the simulation instantaneously rebuilds its return pool from those exact historical periods and recalculates the Capital Deployment Percentile thresholds (7-Day, 1-Month, 1-Year).
+# 2. Create password config (required before first boot)
+mkdir -p .streamlit
+echo 'APP_PASSWORD = "your_secure_password"' > .streamlit/secrets.toml
+
+# 3. Set API key (required for the REST API)
+export QUANT_API_KEY="your_secure_api_key"
+
+# 4. Boot everything (creates venv, installs deps, starts backend + UI)
+chmod +x stock_market_boot.sh
+./stock_market_boot.sh
+```
+
+The boot script will:
+1. Create `jarvis_env/` virtual environment
+2. Install PyTorch CPU wheels (avoids ~2 GB CUDA download)
+3. Install all pinned dependencies from `requirements.txt`
+4. Launch the backend shadow engine in the background
+5. Show a real-time progress bar while all tickers compile
+6. Ask you to select Investor or Advanced mode
+7. Launch the Streamlit dashboard
+
+> **First run takes 5–15 minutes** depending on your internet speed and the number of tickers in `assets.json`. Subsequent runs use cached data and are near-instant.
+
+---
+
+## 🔐 Security: Passwords & API Keys
+
+### UI Password
+Create `.streamlit/secrets.toml`:
+```toml
+APP_PASSWORD = "your_secure_password"
+```
+This file is listed in `.gitignore` and will never be committed.
+
+### API Key (`QUANT_API_KEY`) — **Required for API access**
+The FastAPI server (`/api/v1/*`) requires an `X-API-Key` header on every request. Set the key as an environment variable before booting:
+
+```bash
+export QUANT_API_KEY="your_secure_api_key"
+```
+
+**Example API calls:**
+```bash
+# List all predictions
+curl -H "X-API-Key: your_secure_api_key" http://localhost:8000/api/v1/predictions
+
+# Get a specific asset's full JSON blob
+curl -H "X-API-Key: your_secure_api_key" http://localhost:8000/api/v1/asset/RELIANCE.NS
+
+# Get the leaderboard
+curl -H "X-API-Key: your_secure_api_key" http://localhost:8000/api/v1/leaderboard
+```
+
+Without the key, all `/api/v1/*` endpoints return `HTTP 401 Unauthorized`. `GET /` returns `HTTP 200` and is the health check.
+
+See `secrets.toml.example` for a full template.
 
 ---
 
 ## 🛠️ Tech Stack
-| Category | Technology |
-|---|---|
-| **Deep Learning** | PyTorch (LSTM) |
-| **Machine Learning** | XGBoost, Optuna (Bayesian Tuning) |
-| **NLP** | vaderSentiment |
-| **API & DB** | FastAPI, Uvicorn, SQLite3 |
-| **Frontend UI** | Streamlit, Plotly |
+
+| Category | Technology | Version |
+|---|---|---|
+| **Deep Learning** | PyTorch (LSTM) | 2.3.1 (CPU) |
+| **Machine Learning** | XGBoost | 3.3.0 |
+| **Hyperparameter Tuning** | Optuna (Bayesian) | 3.6.1 |
+| **NLP** | vaderSentiment | 3.3.2 |
+| **GARCH Volatility** | arch | 8.0.0 |
+| **Market Data** | yfinance | 1.5.2 |
+| **API & DB** | FastAPI, Uvicorn, SQLite3 | 0.115.12 / 0.34.3 |
+| **Frontend UI** | Streamlit, Plotly | 1.60.0 / 6.9.0 |
+| **Data** | pandas, numpy | 3.0.5 / 2.5.1 |
 
 ---
 
 > [!WARNING]
-> **FINAL CAUTION:** This software is provided "as is". Financial markets are highly complex systems. The creator assumes no liability for trading losses incurred from using this tool.
+> **FINAL CAUTION:** This software is provided "as is". Financial markets are highly complex, non-stationary systems. The creator assumes no liability for any trading losses incurred from using this tool. Past model performance does not guarantee future results.

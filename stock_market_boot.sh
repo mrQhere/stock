@@ -107,18 +107,26 @@ fi
 # ==========================================
 # PHASE 2: DATA SYNCHRONIZATION
 # ==========================================
-# Wait until at least 1 row exists in predictions, not for the full-cycle .ready flag.
-# This means the UI opens after the FIRST ticker is processed (~30-60s), not after all.
-echo -e "\033[0;36mWaiting for first prediction to appear in database...\033[0m"
+# Wait for the full first cycle to complete before launching the UI.
+# The .ready file is written by the backend after ALL tickers in assets.json
+# have been processed for the first time, giving the user a complete dataset
+# from the moment the dashboard opens.
+echo -e "\033[0;36mCompiling initial data for all tickers. This takes a few minutes on first run...\033[0m"
 
-# DB path mirrors DATA_DIR/quant.db from stock_market_backend.py
 DB_FILE="$BASE_DIR/data_lake/quant.db"
 
 TOTAL_TICKERS=$("$BASE_DIR/jarvis_env/bin/python" -c "import json; d=json.load(open('$BASE_DIR/assets.json')); print(sum(len(v) for cat in d.values() for v in cat.values()))" 2>/dev/null)
 if [ -z "$TOTAL_TICKERS" ] || [ "$TOTAL_TICKERS" -eq 0 ]; then TOTAL_TICKERS=30; fi
 
-while true; do
-    ROW_COUNT=$("$BASE_DIR/jarvis_env/bin/python" -c "
+START_TIME=$(date +%s)
+
+while [ ! -f "$BASE_DIR/data_lake/.ready" ]; do
+    if ! pgrep -f stock_market_backend.py > /dev/null; then
+        echo -e "\n\033[0;31mCRITICAL: Backend process died during sync. Check logs/backend.log.\033[0m"
+        exit 1
+    fi
+
+    PROCESSED=$("$BASE_DIR/jarvis_env/bin/python" -c "
 import sqlite3
 try:
     conn = sqlite3.connect('$DB_FILE')
@@ -126,17 +134,45 @@ try:
 except Exception:
     print(0)
 " 2>/dev/null)
-    if [ "${ROW_COUNT:-0}" -gt 0 ]; then break; fi
-    if ! pgrep -f stock_market_backend.py > /dev/null; then
-        echo -e "\n\033[0;31mCRITICAL: backend process died during sync. Check logs/backend.log.\033[0m"
-        exit 1
+    PROCESSED=${PROCESSED:-0}
+
+    CURR_TIME=$(date +%s)
+    ELAPSED=$((CURR_TIME - START_TIME))
+
+    if [ "$PROCESSED" -gt 0 ]; then
+        AVG_TIME=$((ELAPSED / PROCESSED))
+        if [ "$AVG_TIME" -eq 0 ]; then AVG_TIME=1; fi
+        REMAINING=$((TOTAL_TICKERS - PROCESSED))
+        if [ "$REMAINING" -lt 0 ]; then REMAINING=0; fi
+        EST_SEC=$((REMAINING * AVG_TIME))
+        EST_MIN=$((EST_SEC / 60))
+        EST_REM_SEC=$((EST_SEC % 60))
+        EST_MSG="${EST_MIN}m ${EST_REM_SEC}s"
+    else
+        EST_MSG="Calculating..."
     fi
-    PROCESSED=$(grep -c "Syncing 5Y data" "$BASE_DIR/logs/backend.log" 2>/dev/null || echo "0")
-    echo -ne "\r\033[0;33mInitializing... Tickers fetched so far: ${PROCESSED}/${TOTAL_TICKERS}  \033[0m"
+
+    if [ "$TOTAL_TICKERS" -gt 0 ]; then
+        PCT=$(( PROCESSED * 100 / TOTAL_TICKERS ))
+        if [ "$PCT" -gt 100 ]; then PCT=100; fi
+    else
+        PCT=0
+    fi
+
+    DOTS_TOTAL=20
+    DOTS_DONE=$(( PCT * DOTS_TOTAL / 100 ))
+    DOTS_LEFT=$(( DOTS_TOTAL - DOTS_DONE ))
+
+    BAR="["
+    for ((i=0; i<DOTS_DONE; i++)); do BAR="${BAR}#"; done
+    for ((i=0; i<DOTS_LEFT; i++)); do BAR="${BAR}."; done
+    BAR="${BAR}]"
+
+    echo -ne "\r\033[0;33mCompiling: ${BAR} ${PCT}% | Tickers: ${PROCESSED}/${TOTAL_TICKERS} | Est. Remaining: ${EST_MSG}  \033[0m"
     sleep 2
 done
 
-echo -e "\n\033[0;32mFirst predictions ready! Launching UI...\033[0m"
+echo -e "\n\033[0;32mAll tickers compiled! Launching dashboard...\033[0m"
 
 # ==========================================
 # PHASE 3: THE VISION DEPLOYMENT
