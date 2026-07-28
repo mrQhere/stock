@@ -7,6 +7,7 @@ from sklearn.metrics import r2_score
 import json, os, time, warnings, logging, sqlite3
 from datetime import datetime
 import pytz
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutTimeout
 
 import torch
 import torch.nn as nn
@@ -61,7 +62,7 @@ def init_db():
 def fetch_and_store(ticker: str, conn: sqlite3.Connection) -> pd.DataFrame | None:
     print(f"\n{CYAN}[{ticker}] Syncing 5Y data from Yahoo Finance...{RESET}")
     try:
-        raw = yf.Ticker(ticker).history(period="5y", auto_adjust=True)
+        raw = yf.Ticker(ticker).history(period="5y", auto_adjust=True, timeout=20)
         if raw is None or raw.empty: return None
 
         raw.index = raw.index.tz_localize(None)
@@ -240,21 +241,140 @@ def precision_backtest(data, ticker, conn):
     return float(sharpe), float(max_dd)
 
 def get_sentiment(ticker):
+    """Fetch news sentiment. yfinance .news does not accept a timeout kwarg in 1.5.2,
+    so we wrap it in a short-lived ThreadPoolExecutor to bound the wait."""
     try:
-        news = yf.Ticker(ticker).news
+        with ThreadPoolExecutor(max_workers=1) as _ex:
+            future = _ex.submit(lambda: yf.Ticker(ticker).news)
+            try:
+                news = future.result(timeout=15)
+            except FutTimeout:
+                print(f"[{ticker}] .news timed out — skipping sentiment.")
+                return 0.0
         analyzer = SentimentIntensityAnalyzer()
         scores = [analyzer.polarity_scores(n['title'])['compound'] for n in news if 'title' in n]
         return float(sum(scores)/len(scores)) if scores else 0.0
     except: return 0.0
 
+def compute_piotroski(ticker_obj):
+    """
+    Piotroski F-Score (0-9). Field names verified against real yfinance 1.5.2 output
+    for RELIANCE.NS, TCS.NS, and INFY.NS on 2026-07-28. All three tickers use:
+      financials : 'Net Income', 'Gross Profit', 'Total Revenue'
+      balance_sheet: 'Total Assets', 'Total Debt', 'Current Assets',
+                     'Current Liabilities', 'Ordinary Shares Number'
+      cashflow    : 'Operating Cash Flow'
+    Each item lookup is individually guarded so one missing line item can't crash
+    the score; the whole function catches top-level exceptions and returns None.
+    """
+    try:
+        fin = ticker_obj.financials
+        bs  = ticker_obj.balance_sheet
+        cf  = ticker_obj.cashflow
+        if fin.empty or bs.empty or cf.empty or fin.shape[1] < 2:
+            return None
+        cols = fin.columns[:2]  # most-recent year first
+
+        def _get(frame, key, cols):
+            return frame.loc[key, cols] if key in frame.index else None
+
+        net_income    = _get(fin, 'Net Income', cols)
+        op_cf         = _get(cf,  'Operating Cash Flow', cols)
+        total_assets  = _get(bs,  'Total Assets', cols)
+        total_debt    = _get(bs,  'Total Debt', cols)
+        current_assets = _get(bs, 'Current Assets', cols)
+        current_liab  = _get(bs,  'Current Liabilities', cols)
+        shares        = _get(bs,  'Ordinary Shares Number', cols)
+        revenue       = _get(fin, 'Total Revenue', cols)
+        gross_profit  = _get(fin, 'Gross Profit', cols)
+
+        score = 0
+        try:
+            if net_income is not None and net_income.iloc[0] > 0: score += 1
+        except: pass
+        try:
+            if op_cf is not None and op_cf.iloc[0] > 0: score += 1
+        except: pass
+        try:
+            if (net_income is not None and total_assets is not None and
+                    len(net_income) > 1 and total_assets.iloc[1] > 0 and total_assets.iloc[0] > 0):
+                if (net_income.iloc[0] / total_assets.iloc[0] >
+                        net_income.iloc[1] / total_assets.iloc[1]):
+                    score += 1
+        except: pass
+        try:
+            if (op_cf is not None and net_income is not None and
+                    op_cf.iloc[0] > net_income.iloc[0]):
+                score += 1
+        except: pass
+        try:
+            if (total_debt is not None and total_assets is not None and
+                    len(total_debt) > 1 and total_assets.iloc[0] > 0 and total_assets.iloc[1] > 0):
+                if (total_debt.iloc[0] / total_assets.iloc[0] <
+                        total_debt.iloc[1] / total_assets.iloc[1]):
+                    score += 1
+        except: pass
+        try:
+            if (current_assets is not None and current_liab is not None and
+                    len(current_assets) > 1 and current_liab.iloc[0] > 0 and current_liab.iloc[1] > 0):
+                if (current_assets.iloc[0] / current_liab.iloc[0] >
+                        current_assets.iloc[1] / current_liab.iloc[1]):
+                    score += 1
+        except: pass
+        try:
+            if shares is not None and len(shares) > 1:
+                if shares.iloc[0] <= shares.iloc[1]: score += 1
+        except: pass
+        try:
+            if (gross_profit is not None and revenue is not None and
+                    len(gross_profit) > 1 and revenue.iloc[0] > 0 and revenue.iloc[1] > 0):
+                if (gross_profit.iloc[0] / revenue.iloc[0] >
+                        gross_profit.iloc[1] / revenue.iloc[1]):
+                    score += 1
+        except: pass
+        try:
+            if (revenue is not None and total_assets is not None and
+                    len(revenue) > 1 and total_assets.iloc[0] > 0 and total_assets.iloc[1] > 0):
+                if (revenue.iloc[0] / total_assets.iloc[0] >
+                        revenue.iloc[1] / total_assets.iloc[1]):
+                    score += 1
+        except: pass
+
+        return score
+    except Exception:
+        return None
+
+
 def get_factors(ticker, df):
     try:
-        info = yf.Ticker(ticker).info
-        mc = info.get('marketCap', 0)
-        pb = info.get('priceToBook', 0)
+        t = yf.Ticker(ticker)
+        with ThreadPoolExecutor(max_workers=1) as _ex:
+            future = _ex.submit(lambda: t.info)
+            try:
+                info = future.result(timeout=15)
+            except FutTimeout:
+                print(f"[{ticker}] .info timed out — using defaults.")
+                return 0, 0, 0.0, {}, None
+        mc  = info.get('marketCap', 0)
+        pb  = info.get('priceToBook', 0)
         mom = ((df['Close'].iloc[-1] - df['Close'].iloc[-126]) / df['Close'].iloc[-126] * 100) if len(df) > 126 else 0.0
-        return mc, pb, mom
-    except: return 0, 0, 0.0
+        fundamentals = {
+            "pe":                   info.get("trailingPE", 0),
+            "forward_pe":           info.get("forwardPE", 0),
+            "pb":                   pb,
+            "roe":                  info.get("returnOnEquity", 0),
+            "debt_to_equity":       info.get("debtToEquity", 0),
+            "div_yield":            info.get("dividendYield", 0),
+            "payout_ratio":         info.get("payoutRatio", 0),
+            "revenue_growth":       info.get("revenueGrowth", 0),
+            "earnings_growth":      info.get("earningsGrowth", 0),
+            "insider_holding":      info.get("heldPercentInsiders", 0),
+            "institutional_holding":info.get("heldPercentInstitutions", 0),
+            "free_cashflow":        info.get("freeCashflow", 0),
+        }
+        piotroski = compute_piotroski(t)
+        return mc, pb, mom, fundamentals, piotroski
+    except: return 0, 0, 0.0, {}, None
 
 def monte_carlo_sim(data: pd.DataFrame, ticker: str):
     rets = data['Daily_Return'].dropna() * 100
@@ -321,6 +441,92 @@ def calculate_portfolio_weights(lb_data, conn):
         pd.DataFrame(weights).to_sql("portfolio_weights", conn, if_exists="append", index=False)
     except: pass
 
+def _serve_stale(tk, asset_type, subcat, conn, lb, reason=""):
+    """Re-serve the previous cycle's prediction for a failed ticker rather than
+    dropping it from the leaderboard entirely. Marks the row Stale=True so the
+    UI can display a warning badge. If no prior row exists, silently skips."""
+    try:
+        pred_row = conn.execute(
+            "SELECT JSON_Blob FROM predictions WHERE Ticker = ?", (tk,)
+        ).fetchone()
+        if not pred_row:
+            print(f"[{tk}] No stale data available — skipping. ({reason})")
+            return
+        rep = json.loads(pred_row[0])
+        rep["Stale"] = True
+        # Persist the stale flag back to the DB so the UI picks it up
+        conn.execute(
+            "UPDATE predictions SET JSON_Blob = ? WHERE Ticker = ?",
+            (json.dumps(rep), tk)
+        )
+        conn.commit()
+        lb.append({
+            "Asset": tk,
+            "Category": f"{asset_type}/{subcat}",
+            "Price": f"₹{rep['Price']:,.2f} ⚠",
+            "Signal": rep['Signal'],
+            "Vol": f"{rep['Vol']*100:.2f}%",
+            "Prob": f"{rep.get('Prob', 0):.1f}%",
+            "Sharpe": f"{rep.get('Sharpe', 0):.2f}",
+            "MaxDD": f"{rep.get('MaxDD', 0):.2f}%",
+        })
+        print(f"[{tk}] Serving stale data from previous cycle. ({reason})")
+    except Exception as e:
+        print(f"[{tk}] Could not serve stale data: {e}")
+
+def _process_ticker(tk, asset_type, subcat, data, hyperparams, conn, now):
+    """All per-ticker compute in one function so it can be submitted to the
+    ThreadPoolExecutor with a hard timeout. Does not catch exceptions itself —
+    the caller handles FutTimeout and general Exception."""
+    ghost_xgb, ghost_lstm, err, h_r2, lstm_r2, feats, data = train_engine(data, tk, hyperparams)
+
+    cols = [c for c in data.columns if c != 'Date']
+    data['Date'] = data['Date'].astype(str)
+    conn.execute("DELETE FROM historical_data WHERE Ticker = ?", (tk,))
+    data.to_sql("historical_data", conn, if_exists="append", index=False)
+
+    sharpe, max_dd = precision_backtest(data, tk, conn)
+    prob, vol, scn, mcr, mc_paths = monte_carlo_sim(data, tk)
+    sentiment = get_sentiment(tk)
+    mc, pb, mom, fundamentals, piotroski = get_factors(tk, data)
+    price = float(data['Close'].iloc[-1])
+
+    data_sorted = data.sort_values('Date')
+    cagr = (((price + (data_sorted['Dividends'].sum() if 'Dividends' in data_sorted.columns else 0)) / float(data_sorted['Close'].iloc[0])) ** (1 / ((pd.to_datetime(data_sorted['Date'].iloc[-1]) - pd.to_datetime(data_sorted['Date'].iloc[0])).days / 365.25)) - 1) * 100 if len(data_sorted) > 200 else 0
+    down_std = data['Daily_Return'][data['Daily_Return'] < 0].std() * np.sqrt(252)
+    sortino = float(data['Daily_Return'].mean() * 252 / down_std) if down_std > 0 else 0
+    var_95 = float(np.percentile(data['Daily_Return'].dropna(), 5)) * 100
+    market_mode = "BULL 🐂" if price > float(data['SMA_50'].iloc[-1]) else "BEAR 🐻"
+
+    pr = ((ghost_xgb[-1] - price) / price) * 100
+    sig = generate_signal(pr, sharpe, max_dd, market_mode, sentiment)
+
+    rep = {
+        "Ticker": tk, "Category": asset_type, "Subcategory": subcat,
+        "Price": price, "Signal": sig, "Ghost": ghost_xgb, "LSTM_Ghost": ghost_lstm,
+        "Scenarios": scn, "Macro": mcr, "MC_Paths": mc_paths, "Features": feats,
+        "Sentiment_Score": sentiment,
+        "Factors": {"Size_MCap": mc, "Value_PB": pb, "Momentum_6M": mom},
+        "Fundamentals": fundamentals,
+        "Piotroski_Score": piotroski,
+        "Compat": h_r2, "LSTM_Compat": lstm_r2, "Error": err,
+        "Vol": vol, "Prob": prob, "Sharpe": sharpe, "MaxDD": max_dd,
+        "Market_Mode": market_mode,
+        "Technical_Indicators": {"RSI": float(data['RSI'].iloc[-1]), "MACD": float(data['MACD'].iloc[-1]), "BB_PB": float(data['BB_PB'].iloc[-1]), "ATR_14": float(data['ATR_14'].iloc[-1]), "Stoch_K": float(data['Stoch_K'].iloc[-1])},
+        "Investing_Tools": {"CAGR": cagr, "Sortino": sortino, "VaR_95": var_95, "Golden_Cross": "Golden Cross 🐂" if float(data['SMA_50'].iloc[-1]) > float(data['SMA_200'].iloc[-1]) else "Death Cross 🐻", "Dist_52W_High": ((price - float(data['High_52W'].iloc[-1])) / float(data['High_52W'].iloc[-1])) * 100 if float(data['High_52W'].iloc[-1]) > 0 else 0, "Dist_52W_Low": ((price - float(data['Low_52W'].iloc[-1])) / float(data['Low_52W'].iloc[-1])) * 100 if float(data['Low_52W'].iloc[-1]) > 0 else 0},
+        "Last_Updated": now.strftime('%Y-%m-%d %H:%M IST'),
+        "Stale": False,
+    }
+
+    lb_entry = {"Asset": tk, "Category": f"{asset_type}/{subcat}", "Price": f"₹{price:,.2f}", "Signal": sig, "Vol": f"{vol*100:.2f}%", "Prob": f"{prob:.1f}%", "Sharpe": f"{sharpe:.2f}", "MaxDD": f"{max_dd:.2f}%"}
+    return rep, lb_entry
+
+
+# Shared executor — max_workers=3 is deliberate: network-bound fetches benefit from
+# concurrency even on a 2-core CPU, but LSTM/XGBoost training will contend above ~4.
+_executor = ThreadPoolExecutor(max_workers=3)
+
+
 def run_stock_market():
     os.makedirs(DATA_DIR, exist_ok=True)
     conn = init_db()
@@ -354,7 +560,10 @@ def run_stock_market():
                     except: prev_date = None
 
                     data = fetch_and_store(tk, conn)
-                    if data is None or data.empty: continue
+                    if data is None or data.empty:
+                        # Fetch failed — try stale fallback
+                        _serve_stale(tk, asset_type, subcat, conn, lb, reason="fetch failed")
+                        continue
 
                     curr_date = str(data['Date'].iloc[-1])
                     if prev_date and prev_date[:10] == curr_date[:10]:
@@ -367,49 +576,24 @@ def run_stock_market():
                             print(f"[{tk}] Unchanged ({curr_date[:10]}). Cached.")
                             continue
 
+                    # Submit compute work with a hard 120s timeout.
+                    future = _executor.submit(_process_ticker, tk, asset_type, subcat, data, hyperparams, conn, now)
                     try:
-                        ghost_xgb, ghost_lstm, err, h_r2, lstm_r2, feats, data = train_engine(data, tk, hyperparams)
-                        
-                        cols = [c for c in data.columns if c != 'Date']
-                        data['Date'] = data['Date'].astype(str)
-                        conn.execute("DELETE FROM historical_data WHERE Ticker = ?", (tk,))
-                        data.to_sql("historical_data", conn, if_exists="append", index=False)
-                        
-                        sharpe, max_dd = precision_backtest(data, tk, conn)
-                        prob, vol, scn, mcr, mc_paths = monte_carlo_sim(data, tk)
-                        sentiment = get_sentiment(tk)
-                        mc, pb, mom = get_factors(tk, data)
-                        price = float(data['Close'].iloc[-1])
-                        
-                        data_sorted = data.sort_values('Date')
-                        cagr = (((price + (data_sorted['Dividends'].sum() if 'Dividends' in data_sorted.columns else 0)) / float(data_sorted['Close'].iloc[0])) ** (1 / ((pd.to_datetime(data_sorted['Date'].iloc[-1]) - pd.to_datetime(data_sorted['Date'].iloc[0])).days / 365.25)) - 1) * 100 if len(data_sorted) > 200 else 0
-                        down_std = data['Daily_Return'][data['Daily_Return'] < 0].std() * np.sqrt(252)
-                        sortino = float(data['Daily_Return'].mean() * 252 / down_std) if down_std > 0 else 0
-                        var_95 = float(np.percentile(data['Daily_Return'].dropna(), 5)) * 100
-                        market_mode = "BULL 🐂" if price > float(data['SMA_50'].iloc[-1]) else "BEAR 🐻"
-                        
-                        pr = ((ghost_xgb[-1] - price) / price) * 100
-                        sig = generate_signal(pr, sharpe, max_dd, market_mode, sentiment)
-
-                        rep = {
-                            "Ticker": tk, "Category": asset_type, "Subcategory": subcat,
-                            "Price": price, "Signal": sig, "Ghost": ghost_xgb, "LSTM_Ghost": ghost_lstm,
-                            "Scenarios": scn, "Macro": mcr, "MC_Paths": mc_paths, "Features": feats,
-                            "Sentiment_Score": sentiment,
-                            "Factors": {"Size_MCap": mc, "Value_PB": pb, "Momentum_6M": mom},
-                            "Compat": h_r2, "LSTM_Compat": lstm_r2, "Error": err,
-                            "Vol": vol, "Prob": prob, "Sharpe": sharpe, "MaxDD": max_dd,
-                            "Market_Mode": market_mode,
-                            "Technical_Indicators": {"RSI": float(data['RSI'].iloc[-1]), "MACD": float(data['MACD'].iloc[-1]), "BB_PB": float(data['BB_PB'].iloc[-1]), "ATR_14": float(data['ATR_14'].iloc[-1]), "Stoch_K": float(data['Stoch_K'].iloc[-1])},
-                            "Investing_Tools": {"CAGR": cagr, "Sortino": sortino, "VaR_95": var_95, "Golden_Cross": "Golden Cross 🐂" if float(data['SMA_50'].iloc[-1]) > float(data['SMA_200'].iloc[-1]) else "Death Cross 🐻", "Dist_52W_High": ((price - float(data['High_52W'].iloc[-1])) / float(data['High_52W'].iloc[-1])) * 100 if float(data['High_52W'].iloc[-1]) > 0 else 0, "Dist_52W_Low": ((price - float(data['Low_52W'].iloc[-1])) / float(data['Low_52W'].iloc[-1])) * 100 if float(data['Low_52W'].iloc[-1]) > 0 else 0},
-                            "Last_Updated": now.strftime('%Y-%m-%d %H:%M IST'),
-                        }
-                        
-                        conn.execute("INSERT OR REPLACE INTO predictions (Ticker, Category, Subcategory, Price, Signal, Prob, Sharpe, MaxDD, Vol, Market_Mode, JSON_Blob) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                     (tk, asset_type, subcat, price, sig, prob, sharpe, max_dd, vol, market_mode, json.dumps(rep)))
+                        rep, lb_entry = future.result(timeout=120)
+                        conn.execute(
+                            "INSERT OR REPLACE INTO predictions (Ticker, Category, Subcategory, Price, Signal, Prob, Sharpe, MaxDD, Vol, Market_Mode, JSON_Blob) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            (tk, rep['Category'], rep['Subcategory'], rep['Price'], rep['Signal'],
+                             rep['Prob'], rep['Sharpe'], rep['MaxDD'], rep['Vol'],
+                             rep['Market_Mode'], json.dumps(rep))
+                        )
                         conn.commit()
-                        lb.append({"Asset": tk, "Category": f"{asset_type}/{subcat}", "Price": f"₹{price:,.2f}", "Signal": sig, "Vol": f"{vol*100:.2f}%", "Prob": f"{prob:.1f}%", "Sharpe": f"{sharpe:.2f}", "MaxDD": f"{max_dd:.2f}%"})
-                    except Exception as ex: print(f"{BLINK_RED}[{tk}] Compute error: {ex}{RESET}")
+                        lb.append(lb_entry)
+                    except FutTimeout:
+                        print(f"{YELLOW}[{tk}] Timed out after 120s — serving stale data.{RESET}")
+                        _serve_stale(tk, asset_type, subcat, conn, lb, reason="timeout")
+                    except Exception as ex:
+                        print(f"{BLINK_RED}[{tk}] Compute error: {ex}{RESET}")
+                        _serve_stale(tk, asset_type, subcat, conn, lb, reason=str(ex))
 
         if lb:
             conn.execute("DELETE FROM leaderboard")

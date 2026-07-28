@@ -10,6 +10,9 @@ from datetime import timedelta, datetime
 
 st.set_page_config(page_title="Institutional Quant Terminal", layout="wide", initial_sidebar_state="expanded")
 
+# --- MODE (set by boot script via APP_MODE env var) ---
+_default_advanced = os.environ.get("APP_MODE", "investor") == "advanced"
+
 # --- AUTHENTICATION GATE ---
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
@@ -124,9 +127,25 @@ if os.path.exists(os.path.join(DATA_DIR, ".sync_lock")):
 st.title("🏦 Institutional Quant Terminal - Global")
 st.markdown("---")
 
+# --- LIVE PROGRESS BANNER ---
+# Shows how many tickers have been processed so far this cycle.
+try:
+    _done = get_query("SELECT COUNT(*) AS n FROM predictions")['n'].iloc[0]
+    _total = int(os.environ.get("TOTAL_TICKERS", 0))
+    if _total > 0 and _done < _total:
+        st.info(f"⏳ {_done}/{_total} assets processed — leaderboard updating automatically. Refresh in a moment.")
+except Exception:
+    pass
+
 tab_term, tab_screen, tab_port = st.tabs(["🏦 Terminal", "🔎 Screener", "💼 Portfolio"])
 
 with tab_term:
+    # --- MODE TOGGLE ---
+    st.sidebar.markdown("---")
+    show_advanced = st.sidebar.toggle("⚙️ Advanced Mode", value=_default_advanced,
+        help="OFF = Investor view (fundamentals + SIP calculator). ON = full quant terminal.")
+    st.sidebar.markdown("---")
+
     col_a, col_b = st.columns(2)
     df_lb = get_query("SELECT * FROM leaderboard")
     if not df_lb.empty:
@@ -134,21 +153,26 @@ with tab_term:
             st.dataframe(df_lb.style.highlight_max(axis=0, subset=['Prob']), use_container_width=True, hide_index=True)
 
     df_pw = get_query("SELECT * FROM portfolio_weights")
-    if not df_pw.empty:
+    if not df_pw.empty and show_advanced:
         with col_b.expander("⚖️ RISK PARITY PORTFOLIO", expanded=False):
             st.dataframe(df_pw, use_container_width=True, hide_index=True)
 
-    st.sidebar.header("Illustrative Macro Overlays")
-    t_08 = st.sidebar.toggle("📉 2008 GFC (Real Data)")
-    t_covid = st.sidebar.toggle("🦠 2020 COVID (Real Data)")
-    t_rate = st.sidebar.toggle("🏦 2022 Rate Hike (Real Data)")
-    t_oil = st.sidebar.toggle("🛢️ Oil Shock (-15% Formula)")
-    t_bub = st.sidebar.toggle("🫧 Bubble Burst (-25% Formula)")
-    t_hyp = st.sidebar.toggle("💸 Hyperinflation (+50% Formula)")
+    if show_advanced:
+        st.sidebar.header("Illustrative Macro Overlays")
+        t_08 = st.sidebar.toggle("📉 2008 GFC (Real Data)")
+        t_covid = st.sidebar.toggle("🦠 2020 COVID (Real Data)")
+        t_rate = st.sidebar.toggle("🏦 2022 Rate Hike (Real Data)")
+        # These three use illustrative formula curves, not real historical windows,
+        # because no named 'oil shock' or 'bubble burst' event window exists in ^NSEI data.
+        t_oil = st.sidebar.toggle("🛢️ Oil Shock (-15% Formula)")
+        t_bub = st.sidebar.toggle("🫧 Bubble Burst (-25% Formula)")
+        t_hyp = st.sidebar.toggle("💸 Hyperinflation (+50% Formula)")
+    else:
+        t_08 = t_covid = t_rate = t_oil = t_bub = t_hyp = False
 
     df_assets = get_query("SELECT Ticker FROM predictions")
     if df_assets.empty:
-        st.info("System is currently syncing and calculating initial predictions. Please check back in a few minutes.")
+        st.info("System is processing the first ticker — check back in a moment.")
         st.stop()
 
     asset_list = df_assets['Ticker'].tolist()
@@ -158,6 +182,10 @@ with tab_term:
     if not rep:
         st.error(f"Failed to load prediction JSON for {ticker}.")
         st.stop()
+
+    # Stale-data warning badge
+    if rep.get("Stale"):
+        st.warning(f"⚠ Data for **{ticker}** is from a previous cycle (fetch or compute timed out). Numbers may be outdated.")
 
     df = get_query("SELECT * FROM historical_data WHERE Ticker = ?", params=(ticker,))
     if df.empty:
@@ -169,28 +197,32 @@ with tab_term:
     c_head1.subheader(f"{ticker} | Mode: {rep.get('Market_Mode', 'CALCULATING...')}")
     c_head2.markdown(f"<div style='text-align: right; color: #8892b0;'>Last Update: {rep.get('Last_Updated', 'N/A')}</div>", unsafe_allow_html=True)
 
-    sig_color = "#00e676" if "BUY" in rep['Signal'] else "#ff1744" if "SELL" in rep['Signal'] else "#ffea00"
-    st.markdown(f"<div class='signal-box' style='background: {sig_color}; color: #111;'>{rep['Signal']}</div>", unsafe_allow_html=True)
-
-    c1, c2, c3, c4, c5 = st.columns(5)
     sym = "" if ticker.endswith("=X") else "₹" if ticker.endswith(".NS") else "$"
 
-    c1.metric("Current Price", f"{sym}{rep['Price']:,.2f}", delta=f"{rep.get('Error',0):.1f}% Error")
-    c2.metric("Sharpe Ratio", f"{rep.get('Sharpe', 0):.2f}")
-    c3.metric("Max Drawdown", f"{rep.get('MaxDD', 0):.2f}%")
-    c4.metric("Win Probability", f"{rep.get('Prob',0)}%")
-    c5.metric("GARCH Volatility", f"{rep.get('Vol',0)*100:.2f}%")
+    # =========================================================
+    # ALWAYS-VISIBLE: Price snapshot + investor fundamentals
+    # =========================================================
+    inv_t = rep.get("Investing_Tools", {})
+    st.markdown("### 📈 Price Snapshot")
+    ps1, ps2, ps3, ps4 = st.columns(4)
+    ps1.metric("Current Price", f"{sym}{rep['Price']:,.2f}")
+    # 1Y return: compare current price to 252 trading days ago
+    if len(df) >= 252:
+        price_1y_ago = float(df['Close'].iloc[-252])
+        ret_1y = (rep['Price'] - price_1y_ago) / price_1y_ago * 100
+        ps2.metric("1Y Return", f"{ret_1y:.1f}%")
+    elif len(df) > 0:
+        price_start = float(df['Close'].iloc[0])
+        ret_all = (rep['Price'] - price_start) / price_start * 100
+        ps2.metric("Return (since start)", f"{ret_all:.1f}%")
+    else:
+        ps2.metric("1Y Return", "N/A")
+    ps3.metric("5Y CAGR", f"{inv_t.get('CAGR', 0):.2f}%")
+    fnd = rep.get("Fundamentals", {})
+    div_yield = fnd.get("div_yield", 0) or 0
+    ps4.metric("Dividend Yield", f"{div_yield*100:.2f}%" if div_yield else "N/A")
 
-    if "Investing_Tools" in rep:
-        st.markdown("### 🏛️ Long-Term Investing Metrics (Total Return)")
-        inv_t = rep["Investing_Tools"]
-        iv1, iv2, iv3, iv4, iv5 = st.columns(5)
-        iv1.metric("5Y CAGR", f"{inv_t.get('CAGR', 0):.2f}%")
-        iv2.metric("Sortino Ratio", f"{inv_t.get('Sortino', 0):.2f}")
-        iv3.metric("Historical VaR (95%)", f"{inv_t.get('VaR_95', 0):.2f}%")
-        iv4.metric("Trend (50/200 SMA)", inv_t.get('Golden_Cross', 'N/A'))
-        iv5.metric("52W H/L Dist", f"H: {inv_t.get('Dist_52W_High', 0):.1f}%", delta=f"L: +{inv_t.get('Dist_52W_Low', 0):.1f}%", delta_color="off")
-
+    # --- Company Snapshot (renamed from Fama-French) ---
     if "Factors" in rep:
         st.markdown("### 📊 Company Snapshot & Sentiment")
         fac = rep["Factors"]
@@ -204,83 +236,189 @@ with tab_term:
         sentiment_label = "Bullish 🟢" if sentiment > 0.05 else "Bearish 🔴" if sentiment < -0.05 else "Neutral ⚪"
         f4.metric("News Sentiment Score", f"{sentiment:.2f}", delta=sentiment_label, delta_color="off")
 
-    # Compute MC based on toggles
-    crash_windows = get_crash_windows()
-    active_returns = []
-    active_macro_lines = {}
-    
-    lp = rep['Price']
-    
-    if t_08 and "2008" in crash_windows:
-        active_returns.extend(crash_windows["2008"])
-        cum = np.cumprod(1 + crash_windows["2008"][:252])
-        active_macro_lines["2008 GFC"] = lp * cum
-    if t_covid and "COVID" in crash_windows:
-        active_returns.extend(crash_windows["COVID"])
-        cum = np.cumprod(1 + crash_windows["COVID"][:252])
-        active_macro_lines["2020 COVID"] = lp * cum
-    if t_rate and "Rate" in crash_windows:
-        active_returns.extend(crash_windows["Rate"])
-        cum = np.cumprod(1 + crash_windows["Rate"][:252])
-        active_macro_lines["2022 Rate Hike"] = lp * cum
-        
-    if t_oil:
-        active_macro_lines["Oil Shock"] = [lp*(1 - 0.15*(i/30)) for i in range(30)]
-    if t_bub:
-        active_macro_lines["Bubble Burst"] = [lp*(1 - 0.25*(i/30)**0.8) for i in range(30)]
-    if t_hyp:
-        active_macro_lines["Hyperinflation"] = [lp*(1 + 0.50*(i/30)**2) for i in range(30)]
-        
-    if len(active_returns) == 0:
-        base_returns = df['Daily_Return'].dropna().values
-    else:
-        base_returns = np.array(active_returns)
-        
-    paths = run_block_bootstrap(base_returns, lp)
-    
-    st.markdown("### 🎲 Capital Deployment Scenarios (Monte Carlo)")
-    def get_percentiles(d):
-        return {
-            "Extreme Bad (5%)": np.percentile(paths[d-1], 5),
-            "Bad (25%)": np.percentile(paths[d-1], 25),
-            "Most Likely (50%)": np.percentile(paths[d-1], 50),
-            "Good (75%)": np.percentile(paths[d-1], 75),
-            "Extreme Good (95%)": np.percentile(paths[d-1], 95)
+    # --- Fundamentals panel (always visible, plain-English notes) ---
+    if fnd:
+        st.markdown("### 💼 Fundamentals")
+        _NOTES = {
+            "pe": "P/E ratio: price relative to trailing earnings. <15 cheap, >30 expensive for most sectors.",
+            "forward_pe": "Forward P/E: based on next-year earnings estimates. Lower than trailing P/E = growth expected.",
+            "pb": "Price/Book: market value vs. book value. <1 may signal undervaluation; very high = premium brand.",
+            "roe": "Return on Equity: profit generated per rupee of shareholder equity. >15% is generally strong.",
+            "debt_to_equity": "Debt/Equity: how much debt vs. equity. >2 is high leverage for most non-finance sectors.",
+            "div_yield": "Dividend Yield: annual dividend as % of price. Higher = more income, but check payout ratio.",
+            "payout_ratio": "Payout Ratio: % of earnings paid as dividends. >80% may be unsustainable.",
+            "revenue_growth": "Revenue Growth (YoY): top-line expansion. >10% is healthy for most sectors.",
+            "earnings_growth": "Earnings Growth (YoY): bottom-line expansion. Sustained growth drives long-term price.",
+            "insider_holding": "Insider Holdings: % held by management. Higher = skin in the game.",
+            "institutional_holding": "Institutional Holdings: % held by funds/FIIs. High = professional conviction.",
+            "free_cashflow": "Free Cash Flow: cash left after capex. Positive FCF = company funds its own growth.",
         }
-    
-    scenarios = {
-        "7_Day": get_percentiles(7),
-        "1_Month": get_percentiles(30),
-        "1_Year": get_percentiles(252)
-    }
-    
-    sc_df = pd.DataFrame(scenarios).T
-    for col in sc_df.columns:
-        sc_df[col] = sc_df[col].apply(lambda x: f"{sym}{x:,.2f}")
-    st.dataframe(sc_df, use_container_width=True)
+        _LABELS = {
+            "pe": "Trailing P/E", "forward_pe": "Forward P/E", "pb": "P/B", "roe": "ROE",
+            "debt_to_equity": "Debt/Equity", "div_yield": "Div Yield",
+            "payout_ratio": "Payout Ratio", "revenue_growth": "Revenue Growth",
+            "earnings_growth": "Earnings Growth", "insider_holding": "Insider %",
+            "institutional_holding": "Institutional %", "free_cashflow": "Free Cash Flow",
+        }
+        rows = []
+        for k, label in _LABELS.items():
+            v = fnd.get(k, None)
+            if v is None or v == 0:
+                val_str = "N/A"
+            elif k in ("div_yield", "payout_ratio", "roe", "revenue_growth",
+                       "earnings_growth", "insider_holding", "institutional_holding"):
+                val_str = f"{v*100:.2f}%"
+            elif k == "free_cashflow":
+                val_str = f"{sym}{v/1e9:,.2f}B" if abs(v) >= 1e9 else f"{sym}{v/1e6:,.2f}M"
+            else:
+                val_str = f"{v:.2f}"
+            rows.append({"Metric": label, "Value": val_str, "What it means": _NOTES[k]})
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-    st.markdown("### 📈 Quantitative Vision (Interactive)")
-    recent = df.tail(200)
-    fig = go.Figure()
-    fig.add_trace(go.Candlestick(x=recent['Date'], open=recent['Open'], high=recent['High'], low=recent['Low'], close=recent['Close'], name='Price Action'))
-    if 'SMA_50' in recent.columns:
-        fig.add_trace(go.Scatter(x=recent['Date'], y=recent['SMA_50'], name='SMA 50', line=dict(color='#ff9900', width=1)))
-    
-    g_dates = [df['Date'].iloc[-1] + timedelta(days=i) for i in range(8)]
-    fig.add_trace(go.Scatter(x=g_dates, y=[rep['Price']]+rep['Ghost'], name='XGBoost 7D Proj', line=dict(color='#00ffcc', dash='dash', width=3)))
-    if 'LSTM_Ghost' in rep and rep['LSTM_Ghost']:
-        fig.add_trace(go.Scatter(x=g_dates, y=[rep['Price']]+rep['LSTM_Ghost'], name='LSTM 7D Proj', line=dict(color='#ff00ff', dash='dash', width=3)))
+    # --- Piotroski F-Score ---
+    pio = rep.get("Piotroski_Score")
+    st.markdown("### 🎓 Piotroski F-Score")
+    if pio is None:
+        st.info("Piotroski score unavailable — financial statements not returned by yfinance for this ticker (common for indices, ETFs, and some ADRs).")
+    else:
+        pio_color = "#00e676" if pio >= 7 else "#ffea00" if pio >= 4 else "#ff1744"
+        pio_label = "Strong" if pio >= 7 else "Neutral" if pio >= 4 else "Weak"
+        st.markdown(
+            f"<div style='font-size:2em; font-weight:bold; color:{pio_color}'>{pio}/9 — {pio_label}</div>"
+            "<p style='color:#8892b0; font-size:0.9em'>Scores 9 signals: profitability (3), leverage/liquidity (3), operating efficiency (3). "
+            "≥7 = financially strong; ≤4 = weaknesses present. ETFs and indices return N/A.</p>",
+            unsafe_allow_html=True
+        )
 
-    for name, line_data in active_macro_lines.items():
-        m_dates = [df['Date'].iloc[-1] + timedelta(days=i) for i in range(len(line_data))]
-        fig.add_trace(go.Scatter(x=m_dates, y=line_data, name=name, line=dict(dash='dot', width=2)))
+    # --- SIP / Goal Calculator ---
+    st.markdown("### 🯩 SIP & Goal Calculator")
+    _cagr = inv_t.get('CAGR', 0)
+    gc1, gc2, gc3 = st.columns(3)
+    sip_amount = gc1.number_input("Monthly SIP Amount (₹)", min_value=500, value=5000, step=500)
+    sip_years = gc2.number_input("Investment Horizon (years)", min_value=1, max_value=40, value=10)
+    goal_amount = gc3.number_input("Target Corpus (₹)", min_value=10000, value=1000000, step=10000)
 
-    fig.update_layout(
-        template="plotly_dark", height=600, margin=dict(l=0, r=0, t=30, b=0), xaxis_rangeslider_visible=False,
-        dragmode='drawline'
-    )
-    # Enable Interactive Charting
-    st.plotly_chart(fig, use_container_width=True, config={'modeBarButtonsToAdd': ['drawline', 'drawopenpath', 'drawcircle', 'drawrect', 'eraseshape']})
+    if _cagr > 0:
+        monthly_rate = (_cagr / 100) / 12
+        n_months = sip_years * 12
+        # Future value of SIP using compound formula
+        fv_sip = sip_amount * (((1 + monthly_rate) ** n_months - 1) / monthly_rate) * (1 + monthly_rate)
+        # Months needed to reach goal
+        if monthly_rate > 0:
+            import math
+            months_needed = math.log(1 + (goal_amount * monthly_rate) / (sip_amount * (1 + monthly_rate))) / math.log(1 + monthly_rate)
+            years_needed = months_needed / 12
+        else:
+            years_needed = goal_amount / (sip_amount * 12)
+        sr1, sr2 = st.columns(2)
+        sr1.metric(f"Projected corpus after {sip_years}Y", f"₹{fv_sip:,.0f}",
+                   delta=f"Using {_cagr:.1f}% CAGR (this ticker's 5Y avg)")
+        sr2.metric(f"Time to reach ₹{goal_amount:,.0f}", f"{years_needed:.1f} years",
+                   delta=f"at ₹{sip_amount:,}/mo SIP")
+    else:
+        st.info("CAGR not available for this ticker — goal projections require at least 1 year of price history.")
+
+    # =========================================================
+    # ADVANCED MODE ONLY: Signal, metrics, MC, chart
+    # =========================================================
+    if show_advanced:
+        sig_color = "#00e676" if "BUY" in rep['Signal'] else "#ff1744" if "SELL" in rep['Signal'] else "#ffea00"
+        st.markdown(f"<div class='signal-box' style='background: {sig_color}; color: #111;'>{rep['Signal']}</div>", unsafe_allow_html=True)
+
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Current Price", f"{sym}{rep['Price']:,.2f}", delta=f"{rep.get('Error',0):.1f}% Error")
+        c2.metric("Sharpe Ratio", f"{rep.get('Sharpe', 0):.2f}")
+        c3.metric("Max Drawdown", f"{rep.get('MaxDD', 0):.2f}%")
+        c4.metric("Win Probability", f"{rep.get('Prob',0)}%")
+        c5.metric("GARCH Volatility", f"{rep.get('Vol',0)*100:.2f}%")
+
+        if "Investing_Tools" in rep:
+            st.markdown("### 🏑️ Long-Term Investing Metrics (Total Return)")
+            iv1, iv2, iv3, iv4, iv5 = st.columns(5)
+            iv1.metric("5Y CAGR", f"{inv_t.get('CAGR', 0):.2f}%")
+            iv2.metric("Sortino Ratio", f"{inv_t.get('Sortino', 0):.2f}")
+            iv3.metric("Historical VaR (95%)", f"{inv_t.get('VaR_95', 0):.2f}%")
+            iv4.metric("Trend (50/200 SMA)", inv_t.get('Golden_Cross', 'N/A'))
+            iv5.metric("52W H/L Dist", f"H: {inv_t.get('Dist_52W_High', 0):.1f}%", delta=f"L: +{inv_t.get('Dist_52W_Low', 0):.1f}%", delta_color="off")
+
+        # Compute MC based on toggles (advanced mode only)
+        crash_windows = get_crash_windows()
+        active_returns = []
+        active_macro_lines = {}
+
+        lp = rep['Price']
+
+        if t_08 and "2008" in crash_windows:
+            active_returns.extend(crash_windows["2008"])
+            cum = np.cumprod(1 + crash_windows["2008"][:252])
+            active_macro_lines["2008 GFC"] = lp * cum
+        if t_covid and "COVID" in crash_windows:
+            active_returns.extend(crash_windows["COVID"])
+            cum = np.cumprod(1 + crash_windows["COVID"][:252])
+            active_macro_lines["2020 COVID"] = lp * cum
+        if t_rate and "Rate" in crash_windows:
+            active_returns.extend(crash_windows["Rate"])
+            cum = np.cumprod(1 + crash_windows["Rate"][:252])
+            active_macro_lines["2022 Rate Hike"] = lp * cum
+
+        # Oil Shock / Bubble Burst / Hyperinflation use illustrative formula curves—no
+        # named event window exists in ^NSEI history for these scenarios.
+        if t_oil:
+            active_macro_lines["Oil Shock"] = [lp*(1 - 0.15*(i/30)) for i in range(30)]
+        if t_bub:
+            active_macro_lines["Bubble Burst"] = [lp*(1 - 0.25*(i/30)**0.8) for i in range(30)]
+        if t_hyp:
+            active_macro_lines["Hyperinflation"] = [lp*(1 + 0.50*(i/30)**2) for i in range(30)]
+
+        if len(active_returns) == 0:
+            base_returns = df['Daily_Return'].dropna().values
+        else:
+            base_returns = np.array(active_returns)
+
+        paths = run_block_bootstrap(base_returns, lp)
+
+        st.markdown("### 🎲 Capital Deployment Scenarios (Monte Carlo)")
+        def get_percentiles(d):
+            return {
+                "Extreme Bad (5%)": np.percentile(paths[d-1], 5),
+                "Bad (25%)": np.percentile(paths[d-1], 25),
+                "Most Likely (50%)": np.percentile(paths[d-1], 50),
+                "Good (75%)": np.percentile(paths[d-1], 75),
+                "Extreme Good (95%)": np.percentile(paths[d-1], 95)
+            }
+
+        scenarios = {
+            "7_Day": get_percentiles(7),
+            "1_Month": get_percentiles(30),
+            "1_Year": get_percentiles(252)
+        }
+
+        sc_df = pd.DataFrame(scenarios).T
+        for col in sc_df.columns:
+            sc_df[col] = sc_df[col].apply(lambda x: f"{sym}{x:,.2f}")
+        st.dataframe(sc_df, use_container_width=True)
+
+        st.markdown("### 📈 Quantitative Vision (Interactive)")
+        recent = df.tail(200)
+        fig = go.Figure()
+        fig.add_trace(go.Candlestick(x=recent['Date'], open=recent['Open'], high=recent['High'], low=recent['Low'], close=recent['Close'], name='Price Action'))
+        if 'SMA_50' in recent.columns:
+            fig.add_trace(go.Scatter(x=recent['Date'], y=recent['SMA_50'], name='SMA 50', line=dict(color='#ff9900', width=1)))
+
+        g_dates = [df['Date'].iloc[-1] + timedelta(days=i) for i in range(8)]
+        fig.add_trace(go.Scatter(x=g_dates, y=[rep['Price']]+rep['Ghost'], name='XGBoost 7D Proj', line=dict(color='#00ffcc', dash='dash', width=3)))
+        if 'LSTM_Ghost' in rep and rep['LSTM_Ghost']:
+            fig.add_trace(go.Scatter(x=g_dates, y=[rep['Price']]+rep['LSTM_Ghost'], name='LSTM 7D Proj', line=dict(color='#ff00ff', dash='dash', width=3)))
+
+        for name, line_data in active_macro_lines.items():
+            m_dates = [df['Date'].iloc[-1] + timedelta(days=i) for i in range(len(line_data))]
+            fig.add_trace(go.Scatter(x=m_dates, y=line_data, name=name, line=dict(dash='dot', width=2)))
+
+        fig.update_layout(
+            template="plotly_dark", height=600, margin=dict(l=0, r=0, t=30, b=0), xaxis_rangeslider_visible=False,
+            dragmode='drawline'
+        )
+        st.plotly_chart(fig, use_container_width=True, config={'modeBarButtonsToAdd': ['drawline', 'drawopenpath', 'drawcircle', 'drawrect', 'eraseshape']})
 
 with tab_screen:
     st.header("🔎 Advanced Market Screener")

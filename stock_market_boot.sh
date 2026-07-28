@@ -107,58 +107,36 @@ fi
 # ==========================================
 # PHASE 2: DATA SYNCHRONIZATION
 # ==========================================
-echo -e "\033[0;36mInitializing Data Compilation Engine...\033[0m"
+# Wait until at least 1 row exists in predictions, not for the full-cycle .ready flag.
+# This means the UI opens after the FIRST ticker is processed (~30-60s), not after all.
+echo -e "\033[0;36mWaiting for first prediction to appear in database...\033[0m"
+
+# DB path mirrors DATA_DIR/quant.db from stock_market_backend.py
+DB_FILE="$BASE_DIR/data_lake/quant.db"
 
 TOTAL_TICKERS=$("$BASE_DIR/jarvis_env/bin/python" -c "import json; d=json.load(open('$BASE_DIR/assets.json')); print(sum(len(v) for cat in d.values() for v in cat.values()))" 2>/dev/null)
 if [ -z "$TOTAL_TICKERS" ] || [ "$TOTAL_TICKERS" -eq 0 ]; then TOTAL_TICKERS=30; fi
 
-START_TIME=$(date +%s)
-
-while [ ! -f "$BASE_DIR/data_lake/.ready" ]; do
+while true; do
+    ROW_COUNT=$("$BASE_DIR/jarvis_env/bin/python" -c "
+import sqlite3
+try:
+    conn = sqlite3.connect('$DB_FILE')
+    print(conn.execute('SELECT COUNT(*) FROM predictions').fetchone()[0])
+except Exception:
+    print(0)
+" 2>/dev/null)
+    if [ "${ROW_COUNT:-0}" -gt 0 ]; then break; fi
     if ! pgrep -f stock_market_backend.py > /dev/null; then
-        echo -e "\n\033[0;31mCRITICAL ERROR: Backend process died during sync. Check logs/backend.log.\033[0m"
+        echo -e "\n\033[0;31mCRITICAL: backend process died during sync. Check logs/backend.log.\033[0m"
         exit 1
     fi
-    
     PROCESSED=$(grep -c "Syncing 5Y data" "$BASE_DIR/logs/backend.log" 2>/dev/null || echo "0")
-    
-    CURR_TIME=$(date +%s)
-    ELAPSED=$((CURR_TIME - START_TIME))
-    
-    if [ "$PROCESSED" -gt 0 ]; then
-        AVG_TIME=$((ELAPSED / PROCESSED))
-        if [ "$AVG_TIME" -eq 0 ]; then AVG_TIME=1; fi
-        REMAINING_TICKERS=$((TOTAL_TICKERS - PROCESSED))
-        if [ "$REMAINING_TICKERS" -lt 0 ]; then REMAINING_TICKERS=0; fi
-        EST_SEC=$((REMAINING_TICKERS * AVG_TIME))
-        EST_MIN=$((EST_SEC / 60))
-        EST_REM_SEC=$((EST_SEC % 60))
-        EST_MSG="${EST_MIN}m ${EST_REM_SEC}s"
-    else
-        EST_MSG="Calculating..."
-    fi
-    
-    if [ "$TOTAL_TICKERS" -gt 0 ]; then
-        PCT=$(( PROCESSED * 100 / TOTAL_TICKERS ))
-        if [ "$PCT" -gt 100 ]; then PCT=100; fi
-    else
-        PCT=0
-    fi
-    
-    DOTS_TOTAL=20
-    DOTS_DONE=$(( PCT * DOTS_TOTAL / 100 ))
-    DOTS_LEFT=$(( DOTS_TOTAL - DOTS_DONE ))
-    
-    BAR="["
-    for ((i=0; i<DOTS_DONE; i++)); do BAR="${BAR}#"; done
-    for ((i=0; i<DOTS_LEFT; i++)); do BAR="${BAR}."; done
-    BAR="${BAR}]"
-    
-    echo -ne "\r\033[0;33mCompiling Data: ${BAR} ${PCT}% | Tickers: ${PROCESSED}/${TOTAL_TICKERS} | Est. Time Left: ${EST_MSG} \033[0m"
+    echo -ne "\r\033[0;33mInitializing... Tickers fetched so far: ${PROCESSED}/${TOTAL_TICKERS}  \033[0m"
     sleep 2
 done
 
-echo -e "\n\033[0;32mData Compilation Complete! Launching UI...\033[0m"
+echo -e "\n\033[0;32mFirst predictions ready! Launching UI...\033[0m"
 
 # ==========================================
 # PHASE 3: THE VISION DEPLOYMENT
@@ -166,5 +144,18 @@ echo -e "\n\033[0;32mData Compilation Complete! Launching UI...\033[0m"
 clear
 
 echo -e "\033[0;36mStock Market Predictor System Initializing...\033[0m"
+
+# Mode selection — controls which panels the UI renders.
+# The backend always computes all data; mode is UI-only.
+echo ""
+echo "Select mode:"
+echo "  1) Simple Long-Term Investor   (fundamentals, Piotroski, SIP calculator)"
+echo "  2) Advanced Trader             (all panels + signal, Monte Carlo, backtest)"
+read -p "> " MODE_CHOICE
+export APP_MODE=$([ "$MODE_CHOICE" == "2" ] && echo "advanced" || echo "investor")
+echo -e "\033[0;32mStarting in ${APP_MODE} mode.\033[0m"
+
+TOTAL_TICKERS=$("$BASE_DIR/jarvis_env/bin/python" -c "import json; d=json.load(open('$BASE_DIR/assets.json')); print(sum(len(v) for cat in d.values() for v in cat.values()))" 2>/dev/null)
+export TOTAL_TICKERS
 
 "$BASE_DIR/jarvis_env/bin/streamlit" run "$BASE_DIR/stock_market_ui.py"
