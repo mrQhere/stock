@@ -108,6 +108,49 @@ if [ ! -f "$BASE_DIR/assets.json" ]; then
 fi
 
 # ==========================================
+# PHASE 0.5: CREDENTIALS SETUP
+# ==========================================
+echo -e ""
+echo -e "\033[0;36m[Phase 0.5] Checking credentials...\033[0m"
+
+# 1. UI Password
+mkdir -p "$BASE_DIR/.streamlit"
+SECRETS_FILE="$BASE_DIR/.streamlit/secrets.toml"
+if [ ! -f "$SECRETS_FILE" ] || ! grep -q "APP_PASSWORD" "$SECRETS_FILE"; then
+    echo -e "\033[0;33m[!] Dashboard Password not set.\033[0m"
+    read -s -p "Enter a strong password for the UI Dashboard: " USER_APP_PASS
+    echo ""
+    echo "APP_PASSWORD = \"$USER_APP_PASS\"" > "$SECRETS_FILE"
+    echo -e "\033[0;32m  Saved to $SECRETS_FILE\033[0m"
+else
+    echo -e "\033[0;32m  Dashboard password OK\033[0m"
+fi
+
+# 2. REST API Key
+# Check if it's exported in the environment OR stored in ~/.bashrc
+BASHRC_FILE="$HOME/.bashrc"
+if [ -z "$QUANT_API_KEY" ]; then
+    if grep -q "export QUANT_API_KEY=" "$BASHRC_FILE"; then
+        # Extract from bashrc and export it for this session
+        export QUANT_API_KEY=$(grep -m 1 "^export QUANT_API_KEY=" "$BASHRC_FILE" | cut -d '"' -f 2)
+        echo -e "\033[0;32m  REST API Key loaded from $BASHRC_FILE\033[0m"
+    else
+        echo -e "\033[0;33m[!] REST API Key not set.\033[0m"
+        read -s -p "Enter a strong API Key for the FastAPI backend: " USER_API_KEY
+        echo ""
+        echo "export QUANT_API_KEY=\"$USER_API_KEY\"" >> "$BASHRC_FILE"
+        export QUANT_API_KEY="$USER_API_KEY"
+        echo -e "\033[0;32m  Saved to $BASHRC_FILE\033[0m"
+    fi
+else
+    echo -e "\033[0;32m  REST API Key OK (from env)\033[0m"
+    # Make sure it's in bashrc for future manual runs
+    if ! grep -q "export QUANT_API_KEY=" "$BASHRC_FILE"; then
+        echo "export QUANT_API_KEY=\"$QUANT_API_KEY\"" >> "$BASHRC_FILE"
+    fi
+fi
+
+# ==========================================
 # PHASE 1: BACKEND IGNITION
 # ==========================================
 echo -e ""

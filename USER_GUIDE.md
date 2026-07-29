@@ -8,70 +8,34 @@
 
 ## Table of Contents
 
-### Part 0 — Quick Start
-0. [First-Time Setup](#0-first-time-setup)
+### Part 1: First Setup & Quick Start
+1. [Prerequisites](#01-prerequisites)
+2. [Clone and Configure](#02-clone-and-configure)
+3. [Install Ollama (Optional)](#03-install-ollama-optional--enables-hermes-ai-analysis)
+4. [Launch](#04-launch)
 
-### Part 1 — Standard Setup
-1. [What This Tool Does](#1-what-this-tool-does)
-2. [System Requirements](#2-system-requirements)
-3. [First-Time Installation (Copy-Paste)](#3-first-time-installation-copy-paste)
-4. [Setting Your Password and API Key](#4-setting-your-password-and-api-key)
-5. [Starting the System](#5-starting-the-system)
+### Part 2: Beginner Operations
+5. [What This Tool Does](#1-what-this-tool-does)
 6. [Choosing a Mode](#6-choosing-a-mode)
 7. [Reading the Dashboard — Investor Mode](#7-reading-the-dashboard--investor-mode)
+
+### Part 3: Advanced Operations
 8. [Reading the Dashboard — Advanced Mode](#8-reading-the-dashboard--advanced-mode)
+9. [Customising assets.json](#23-customising-assetsjson)
+10. [Hermes LLM Agent](#part-5--hermes-llm-agent)
 
-### Part 2 — System Architecture
-9. [The Three-Process Architecture](#9-the-three-process-architecture)
-10. [The Data Pipeline](#10-the-data-pipeline)
-11. [SQLite as the State Manager](#11-sqlite-as-the-state-manager)
-12. [Fault Tolerance and Stale Data](#12-fault-tolerance-and-stale-data)
+### Part 4: Expert Operations
+11. [Developer Mode (D1-D10)](#developer-mode--for-contributors--advanced-users)
+12. [System Architecture](#part-2--system-architecture)
+13. [Mathematical Core Theory](#part-3--mathematical-theorems-the-core)
+14. [REST API Reference](#25-rest-api-reference)
 
-### Part 3 — Mathematical Theorems (The Core)
-13. [Technical Indicators: Full Derivations](#13-technical-indicators-full-derivations)
-14. [XGBoost: Gradient Boosting Theory](#14-xgboost-gradient-boosting-theory)
-15. [LSTM: Sequence Modelling Theory](#15-lstm-sequence-modelling-theory)
-16. [Monte Carlo Block Bootstrap](#16-monte-carlo-block-bootstrap)
-17. [GARCH Volatility Modelling](#17-garch-volatility-modelling)
-18. [Risk Metrics: Sharpe, Sortino, VaR, Max Drawdown](#18-risk-metrics-sharpe-sortino-var-max-drawdown)
-19. [Piotroski F-Score: Fundamental Analysis](#19-piotroski-f-score-fundamental-analysis)
-20. [Signal Generation and Risk Gates](#20-signal-generation-and-risk-gates)
-21. [SIP Calculator: Time Value of Money](#21-sip-calculator-time-value-of-money)
-22. [Sentiment Analysis: VADER](#22-sentiment-analysis-vader)
-
-### Part 4 — Advanced Operations
-23. [Customising assets.json](#23-customising-assetsjson)
-24. [Bayesian Hyperparameter Tuning (Optuna)](#24-bayesian-hyperparameter-tuning-optuna)
-25. [REST API Reference](#25-rest-api-reference)
-26. [Troubleshooting & Complete Reset](#26-troubleshooting--complete-reset)
-
-### Part 5 — Hermes LLM Agent
-27. [What Hermes Is and Why It Gets Better Over Time](#27-what-hermes-is-and-why-it-gets-better-over-time)
-28. [Installing Ollama + phi3:mini (3 Commands)](#28-installing-ollama--phi3mini-3-commands)
-29. [How the Memory System Works](#29-how-the-memory-system-works)
-30. [Reading the Hermes Analysis Panel](#30-reading-the-hermes-analysis-panel)
-
-### Part 6 — Daily Backtest & Anti-Overfitting
-31. [Walk-Forward Validation: What It Is and Why It Matters](#31-walk-forward-validation-what-it-is-and-why-it-matters)
-32. [The 30-Day Rolling Signal Accuracy Metric](#32-the-30-day-rolling-signal-accuracy-metric)
-33. [Anti-Overfitting Guards](#33-anti-overfitting-guards)
-34. [How the System Prevents Itself Getting Worse](#34-how-the-system-prevents-itself-getting-worse)
-
-### Developer Mode — For Contributors & Advanced Users
-- [D1. Activating the Development Environment](#d1-activating-the-development-environment)
-- [D2. Customising Signal Logic](#d2-customising-signal-logic-generate_signal)
-- [D3. Adding / Removing Tickers](#d3-adding--removing-tickers-assetsjson)
-- [D4. Changing the ML Model (XGBoost Hyperparameters)](#d4-changing-the-ml-model-xgboost-hyperparameters)
-- [D5. Switching the Hermes LLM Model](#d5-switching-the-hermes-llm-model)
-- [D6. Manual Database Queries](#d6-manual-database-queries)
-- [D7. Live Log Monitoring](#d7-live-log-monitoring)
-- [D8. Running the Test Suite](#d8-running-the-test-suite)
-- [D9. Architecture Principles](#d9-architecture-principles-before-you-change-anything)
-- [D10. Contributing](#d10-contributing)
+### Part 5: Troubleshooting & Reset
+15. [Comprehensive Reset Guide](#26-troubleshooting--complete-reset)
 
 ---
 
-# PART 0 — QUICK START
+# PART 1: First Setup & Quick Start
 
 ## 0. First-Time Setup
 
@@ -95,33 +59,15 @@ sudo apt update && sudo apt install -y python3.12 python3.12-venv python3.12-dev
 ```bash
 git clone https://github.com/mrQhere/stock.git
 cd stock
-
-# Dashboard password — required to log into the UI
-mkdir -p .streamlit
-echo 'APP_PASSWORD = "your_strong_password_here"' > .streamlit/secrets.toml
-
-# REST API key — required to call the FastAPI endpoints
-# You invent this value yourself. Make it hard to guess.
-echo 'export QUANT_API_KEY="your_api_key_here"' >> ~/.bashrc
-source ~/.bashrc
 ```
 
-**Real examples** (replace with your own values):
-```bash
-# Good password examples:
-APP_PASSWORD = "mQ-alpha-2026-Xr7q"
-APP_PASSWORD = "TCS-RELIANCE-quant99"
-
-# Good API key examples:
-export QUANT_API_KEY="sk-local-mQhere-2026-z9Kp"
-export QUANT_API_KEY="quant-stock-v1-prod-key"
-```
+> **Zero-Friction Auth:** You do not need to manually configure passwords anymore. The boot script will interactively ask you to set your Dashboard password and REST API key on the first run.
 
 > [!NOTE]
 > `QUANT_API_KEY` is read from the environment only — never from `secrets.toml`. `APP_PASSWORD` is read from `secrets.toml` only. They are separate systems.
 
 > **Troubleshooting Auth Errors (401 / 403):**
-> If you get an `Invalid or missing API key` error, ensure you exported `QUANT_API_KEY` in the exact terminal where you run `./stock_market_boot.sh`. To make it permanent, add it to `~/.bashrc` and run `source ~/.bashrc`. If the UI rejects your password, double-check `.streamlit/secrets.toml`.
+> If the UI rejects your password, you can reset it by editing `.streamlit/secrets.toml`. If the API rejects your key, ensure `QUANT_API_KEY` is exported in your terminal (check `~/.bashrc`).
 
 ---
 
@@ -163,7 +109,7 @@ The script installs deps, syncs all tickers, asks you to pick a mode, then opens
 
 
 ---
-# PART 1 — STANDARD SETUP
+# PART 2: Beginner Operations
 
 ## 1. What This Tool Does
 
@@ -1109,6 +1055,8 @@ while True:
 ```
 
 ---
+
+# PART 5: Troubleshooting & Reset
 
 ## 26. Troubleshooting & Complete Reset
 

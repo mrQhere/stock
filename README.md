@@ -97,14 +97,8 @@ You can also flip the **Advanced Mode** toggle in the sidebar at any time — no
 git clone https://github.com/mrQhere/stock.git
 cd stock
 
-# 2. Create password config (required before first boot)
-mkdir -p .streamlit
-echo 'APP_PASSWORD = "your_secure_password"' > .streamlit/secrets.toml
-
-# 3. Set API key (required for the REST API)
-export QUANT_API_KEY="your_secure_api_key"
-
-# 4. Boot everything (creates venv, installs deps, starts backend + UI)
+# 2. Boot everything 
+# (The script will interactively ask you to set your passwords on the first run)
 chmod +x stock_market_boot.sh
 ./stock_market_boot.sh
 ```
@@ -124,41 +118,11 @@ The boot script will:
 
 ## 🔐 Setting Authentication
 
-### Dashboard Password (Optional)
+The boot script (`stock_market_boot.sh`) features a **zero-friction interactive setup**. On your very first run, it will prompt you in the terminal to:
+1. Create a secure `APP_PASSWORD` for the Streamlit Dashboard.
+2. Create a `QUANT_API_KEY` for the REST API.
 
-The Streamlit UI checks for `APP_PASSWORD` in `.streamlit/secrets.toml`. If the file is missing, the dashboard opens without any password prompt.
-
-```bash
-mkdir -p .streamlit
-cp secrets.toml.example .streamlit/secrets.toml
-# Then edit .streamlit/secrets.toml and set your password
-```
-
-Or in one line:
-```bash
-mkdir -p .streamlit
-echo 'APP_PASSWORD = "your_secure_password"' > .streamlit/secrets.toml
-```
-
-> This file is in `.gitignore` and will never be committed to GitHub.
-
-### API Key (`QUANT_API_KEY`) — Required for REST API
-
-`QUANT_API_KEY` is read from the **environment only** — it is not loaded from `secrets.toml`. Set it before starting the system:
-
-```bash
-export QUANT_API_KEY="your_secure_api_key"
-# Then boot normally:
-./stock_market_boot.sh
-```
-
-To persist across reboots:
-```bash
-echo 'export QUANT_API_KEY="your_secure_api_key"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-Without this key, all `/api/v1/*` endpoints return `HTTP 401 Unauthorized`. `GET /` is always accessible as a health check.
+These are automatically saved to `.streamlit/secrets.toml` and your `~/.bashrc` file respectively. You never have to configure them manually.
 
 ---
 
