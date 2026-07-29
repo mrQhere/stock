@@ -43,7 +43,7 @@
 23. [Customising assets.json](#23-customising-assetsjson)
 24. [Bayesian Hyperparameter Tuning (Optuna)](#24-bayesian-hyperparameter-tuning-optuna)
 25. [REST API Reference](#25-rest-api-reference)
-26. [Troubleshooting Guide (13 scenarios)](#26-troubleshooting-guide)
+26. [Troubleshooting Guide (30 scenarios)](#26-troubleshooting-guide)
 
 ### Part 5 — Hermes LLM Agent
 27. [What Hermes Is and Why It Gets Better Over Time](#27-what-hermes-is-and-why-it-gets-better-over-time)
@@ -547,13 +547,13 @@ cd stock
 source stock_env/bin/activate
 
 # Terminal 1: backend engine
-python stock_market_backend.py
+python src/stock_market_backend.py
 
 # Terminal 2: REST API
-uvicorn api_server:app --host 0.0.0.0 --port 8000
+uvicorn src.api_server:app --host 0.0.0.0 --port 8000
 
 # Terminal 3: dashboard
-streamlit run stock_market_ui.py
+streamlit run src/stock_market_ui.py
 ```
 
 **Check if backend is running:**
@@ -1210,7 +1210,7 @@ The default XGBoost hyperparameters work reasonably for all assets. But each ass
 
 ```bash
 source stock_env/bin/activate
-python hyperparameter_tuning.py
+python src/hyperparameter_tuning.py
 ```
 
 Run this in a dedicated terminal (or `tmux` session). It runs hundreds of trials per ticker and can take hours. Results are written to `data_lake/hyperparams.json`.
@@ -1355,7 +1355,7 @@ tail -50 logs/backend.log
 
 # Run it manually to see the exception in real-time
 source stock_env/bin/activate
-python stock_market_backend.py
+python src/stock_market_backend.py
 ```
 
 Common root causes:
@@ -1553,6 +1553,159 @@ pip install ollama httpx
 ```
 
 Hermes degrades gracefully if `ollama` is not importable — the rest of the system is unaffected.
+
+---
+
+### 26.14 `sqlite3.DatabaseError: file is not a database`
+
+The SQLite file was corrupted (e.g., system power loss during write).
+**Fix:**
+```bash
+rm data_lake/quant.db
+./stock_market_boot.sh
+```
+
+---
+
+### 26.15 `ValueError: Expecting value: line 1 column 1` (JSON blob)
+
+A ticker's prediction JSON was corrupted or partially written.
+**Fix:** Let the backend finish the current cycle. It overwrites the row cleanly every cycle. If persistent, delete the DB.
+
+---
+
+### 26.16 `ImportError: libgomp.so.1: cannot open shared object file`
+
+XGBoost requires OpenMP system libraries, which are missing on minimal Linux installs.
+**Fix (Ubuntu/Debian):**
+```bash
+sudo apt-get update && sudo apt-get install -y libgomp1
+```
+
+---
+
+### 26.17 `streamlit: command not found`
+
+You are trying to run the UI manually but haven't activated the virtual environment.
+**Fix:**
+```bash
+source stock_env/bin/activate
+streamlit run src/stock_market_ui.py
+```
+
+---
+
+### 26.18 `OSError: [Errno 98] Address already in use`
+
+You tried to run `api_server.py` or `stock_market_ui.py` manually, but the background daemons from `./stock_market_boot.sh` are still holding the ports (8000/8501).
+**Fix:**
+```bash
+pkill -f uvicorn
+pkill -f stock_market_ui.py
+```
+
+---
+
+### 26.19 `urllib.error.URLError: [Errno -3] Temporary failure in name resolution`
+
+DNS lookup failed. Your server lost internet connection.
+**Fix:** Check `ping google.com`. The backend will naturally retry on the next cycle.
+
+---
+
+### 26.20 `xgboost.core.XGBoostError: out of memory`
+
+You are tracking too many tickers, or running `hyperparameter_tuning.py` with too many concurrent Optuna trials on a machine with < 4GB RAM.
+**Fix:** Reduce tickers in `assets.json` or upgrade server RAM.
+
+---
+
+### 26.21 `RuntimeError: CUDA error: no kernel image is available`
+
+PyTorch attempted to use a GPU, but the drivers mismatched.
+**Fix:** Force CPU-only PyTorch (which is all this system needs):
+```bash
+source stock_env/bin/activate
+pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu
+```
+
+---
+
+### 26.22 FastAPI logs show `HTTPException: 503 Backend is still syncing` forever
+
+The backend crashed before it could create the `data_lake/.ready` sentinel file, so the API thinks it's still booting.
+**Fix:** Check `tail -50 logs/backend.log` for the crash reason, fix it, and restart `./stock_market_boot.sh`.
+
+---
+
+### 26.23 `IndexError: single positional indexer is out-of-bounds`
+
+Pandas failed to slice data because yfinance returned an empty dataframe.
+**Fix:** The ticker was likely delisted or you typed the suffix wrong (e.g., `RELIANCE` instead of `RELIANCE.NS`). Check `assets.json`.
+
+---
+
+### 26.24 Optuna `StorageInternalError` during tuning
+
+The SQLite database lock timed out during hyperparameter tuning.
+**Fix:** Optuna uses memory by default here, but if you switched it to SQLite, delete the optuna journal file and restart.
+
+---
+
+### 26.25 `KeyError: 'JSON_Blob'` in Streamlit UI
+
+You are running an old version of the database with a new version of the UI. The schema changed.
+**Fix:**
+```bash
+rm data_lake/quant.db
+./stock_market_boot.sh
+```
+
+---
+
+### 26.26 `PermissionError: [Errno 13] Permission denied: 'logs/backend.log'`
+
+You previously ran the script with `sudo` (e.g., `sudo ./stock_market_boot.sh`), so `root` now owns the log directory. You are now running it as a normal user.
+**Fix:**
+```bash
+sudo chown -R $USER:$USER logs/ data_lake/
+```
+
+---
+
+### 26.27 `JSONDecodeError: Expecting ',' delimiter`
+
+You missed a comma between tickers in `assets.json`, or left a trailing comma at the end of a list.
+**Fix:**
+```bash
+python3 -m json.tool assets.json
+# Fix the line number it points to.
+```
+
+---
+
+### 26.28 `AttributeError: module 'pandas' has no attribute 'append'`
+
+You are using Pandas >= 2.0 where `append` was removed, but an older plugin/dependency is still calling it.
+**Fix:** The core codebase uses `pd.concat`, so if you see this, downgrade pandas:
+```bash
+source stock_env/bin/activate
+pip install "pandas<2.0.0"
+```
+
+---
+
+### 26.29 `yfinance: No timezone found, symbol may be delisted`
+
+yfinance is warning that the symbol is completely invalid.
+**Fix:** Remove the offending ticker from `assets.json`. The backend skips it automatically, but removing it speeds up the boot cycle.
+
+---
+
+### 26.30 `StreamlitAPIException: set_page_config() can only be called once`
+
+Streamlit hot-reload glitch when saving `stock_market_ui.py` while it's running.
+**Fix:** Just refresh your browser (F5 or Cmd+R). No restart needed.
 
 ---
 
@@ -1792,13 +1945,13 @@ cd stock
 source stock_env/bin/activate
 
 # Run backend directly (foreground, full tracebacks visible)
-python stock_market_backend.py
+python src/stock_market_backend.py
 
 # Run UI separately with hot-reload
-streamlit run stock_market_ui.py --server.runOnSave true
+streamlit run src/stock_market_ui.py --server.runOnSave true
 
 # Run API server
-uvicorn api_server:app --reload --port 8000
+uvicorn src.api_server:app --reload --port 8000
 ```
 
 ---
@@ -1877,7 +2030,7 @@ Changes are hot-reloaded at the start of each new backend cycle. No restart need
 **Option B — Run the Optuna tuner** for a full Bayesian search:
 ```bash
 source stock_env/bin/activate
-python hyperparameter_tuning.py
+python src/hyperparameter_tuning.py
 # Takes 10–60 minutes depending on ticker count
 # Results auto-saved to data_lake/hyperparams.json
 ```

@@ -1,4 +1,5 @@
 #!/bin/bash
+# Copyright (c) 2026 mrQhere. All rights reserved.
 
 BASE_DIR="$(pwd)"
 
@@ -127,8 +128,8 @@ echo -e "  \033[0;35m→ Backend:    logs/backend.log\033[0m"
 echo -e "  \033[0;35m→ API Server: http://localhost:8000  →  logs/api.log\033[0m"
 echo -e "  \033[0;35m→ UI:         http://localhost:8501  (after data sync)\033[0m"
 
-PYTHONUNBUFFERED=1 nohup "$BASE_DIR/stock_env/bin/python" "$BASE_DIR/stock_market_backend.py" > "$BASE_DIR/logs/backend.log" 2>&1 &
-nohup "$BASE_DIR/stock_env/bin/uvicorn" api_server:app --host 0.0.0.0 --port 8000 > "$BASE_DIR/logs/api.log" 2>&1 &
+PYTHONUNBUFFERED=1 nohup "$BASE_DIR/stock_env/bin/python" "$BASE_DIR/src/stock_market_backend.py" > "$BASE_DIR/logs/backend.log" 2>&1 &
+nohup "$BASE_DIR/stock_env/bin/uvicorn" src.api_server:app --host 0.0.0.0 --port 8000 > "$BASE_DIR/logs/api.log" 2>&1 &
 
 sleep 2
 if ! pgrep -f stock_market_backend.py > /dev/null; then
@@ -229,4 +230,4 @@ echo -e "\033[0;32mLaunching in ${APP_MODE} mode → http://localhost:8501\033[0
 TOTAL_TICKERS=$("$BASE_DIR/stock_env/bin/python" -c "import json; d=json.load(open('$BASE_DIR/assets.json')); print(sum(len(v) for cat in d.values() for v in cat.values()))" 2>/dev/null)
 export TOTAL_TICKERS
 
-"$BASE_DIR/stock_env/bin/streamlit" run "$BASE_DIR/stock_market_ui.py"
+"$BASE_DIR/stock_env/bin/streamlit" run "$BASE_DIR/src/stock_market_ui.py"
