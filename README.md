@@ -231,3 +231,8 @@ Results are written to `data_lake/hyperparams.json`. The backend hot-reloads thi
 
 > [!WARNING]
 > **FINAL CAUTION:** This software is provided "as is". Financial markets are highly complex, non-stationary systems. The creator assumes no liability for any trading losses incurred from using this tool. Past model performance does not guarantee future results.
+
+
+---
+
+&copy; 2026 mrQhere. All rights reserved.
