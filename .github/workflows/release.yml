@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*"        # triggers on v3.2, v3.2.1, v4.0, etc.
+
+permissions:
+  contents: write   # required to create GitHub Releases
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so we can read changelog
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install PyTorch + deps for smoke test
+        run: |
+          pip install --upgrade pip -q
+          pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu -q
+          pip install -r requirements.txt pytest -q
+
+      - name: Run tests before release
+        env:
+          QUANT_API_KEY: "ci-release-test-key"
+        run: pytest tests/ -v --tb=short
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Build release notes from git log
+        id: notes
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            LOG=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s" --no-merges)
+          else
+            LOG=$(git log --pretty=format:"- %s" --no-merges | head -20)
+          fi
+          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+          echo "$LOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Stock Market Predictor ${{ steps.version.outputs.VERSION }}"
+          body: |
+            ## What's Changed in ${{ steps.version.outputs.VERSION }}
+
+            ${{ steps.notes.outputs.CHANGELOG }}
+
+            ---
+
+            ### Quick Start
+
+            ```bash
+            git clone https://github.com/mrQhere/stock.git
+            cd stock
+            mkdir -p .streamlit
+            echo 'APP_PASSWORD = "your_password"' > .streamlit/secrets.toml
+            export QUANT_API_KEY="your_api_key"
+            chmod +x stock_market_boot.sh
+            ./stock_market_boot.sh
+            ```
+
+            See [USER_GUIDE.md](USER_GUIDE.md) for full documentation.
+
+            ### Requirements
+            - Python 3.12+
+            - Linux / macOS / Windows (WSL2)
+            - 4 GB RAM minimum, 8 GB recommended
+            - Ollama (optional, for Hermes LLM analysis)
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

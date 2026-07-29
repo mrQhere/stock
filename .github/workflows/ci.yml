@@ -1,26 +1,131 @@
-name: CI
+name: CI — Stock Market Predictor
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
 
 jobs:
-  test:
+  # ─────────────────────────────────────────────────────────
+  # Job 1: Lint & Format Check
+  # ─────────────────────────────────────────────────────────
+  lint:
+    name: Lint (ruff)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-          cache: 'pip'
-          
-      - name: Install dependencies
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run ruff lint
+        run: ruff check . --select E,F,W --ignore E501,E402,F401,W291,W293 || true
+        # Soft fail — warns but doesn't block merge while codebase matures
+
+  # ─────────────────────────────────────────────────────────
+  # Job 2: Unit Tests (CPU-only PyTorch, no GPU required)
+  # ─────────────────────────────────────────────────────────
+  test:
+    name: Unit Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Cache PyTorch CPU wheel
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: torch-cpu-${{ runner.os }}-py${{ matrix.python-version }}
+          restore-keys: torch-cpu-${{ runner.os }}-
+
+      - name: Install PyTorch (CPU-only, skips 2 GB CUDA wheels)
         run: |
-          python -m pip install --upgrade pip
+          pip install --upgrade pip
           pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu
-          pip install -r requirements.txt
-          pip install pytest
-          
-      - name: Run tests
+
+      - name: Install project dependencies
         run: |
-          pytest tests/
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run test suite
+        env:
+          QUANT_API_KEY: "ci-test-key-placeholder"
+        run: |
+          pytest tests/ -v --tb=short \
+            --cov=stock_market_backend \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+  # ─────────────────────────────────────────────────────────
+  # Job 3: Validate Key Files
+  # ─────────────────────────────────────────────────────────
+  validate:
+    name: Validate Config Files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate assets.json (must be valid JSON)
+        run: python -m json.tool assets.json > /dev/null && echo "assets.json OK"
+
+      - name: Validate requirements.txt (all packages importable after install)
+        run: |
+          pip install --upgrade pip -q
+          pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu -q
+          pip install -r requirements.txt -q
+          python -c "
+          import xgboost, arch, sklearn, streamlit, plotly, yfinance, vaderSentiment
+          print('All core imports OK')
+          "
+
+      - name: Check boot script is executable / valid bash
+        run: bash -n stock_market_boot.sh && echo "stock_market_boot.sh syntax OK"
+
+      - name: Check Python syntax on all source files
+        run: |
+          python -c "
+          import ast, sys, pathlib
+          files = list(pathlib.Path('.').glob('*.py'))
+          ok = True
+          for f in files:
+              try:
+                  ast.parse(f.read_text())
+                  print(f'  OK  {f}')
+              except SyntaxError as e:
+                  print(f'  FAIL {f}: {e}')
+                  ok = False
+          sys.exit(0 if ok else 1)
+          "
+
+      - name: Verify no legacy jarvis_env references in tracked files
+        run: |
+          if git grep -l "jarvis_env" -- '*.py' '*.sh' '*.md' '*.toml' '*.txt' 2>/dev/null; then
+            echo "FAIL: Found jarvis_env references — rename to stock_env"
+            exit 1
+          else
+            echo "No legacy jarvis_env references found — OK"
+          fi
