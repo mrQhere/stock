@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🟢 Stock Market Predictor & Institutional Quant Terminal
+#  Stock Market Predictor & Institutional Quant Terminal
 
 **An autonomous, locally-hosted quantitative analysis engine for Global Equities, ETFs, Crypto, Forex, and Indices.**
 
