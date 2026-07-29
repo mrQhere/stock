@@ -8,8 +8,8 @@
 
 ## Table of Contents
 
-### Part 0 — Absolute Beginner Onboarding (Start Here if New to Coding)
-0. [Complete Beginner Setup: From Chrome to Running System](#0-complete-beginner-setup-from-chrome-to-running-system)
+### Part 0 — Quick Start
+0. [First-Time Setup](#0-first-time-setup)
 
 ### Part 1 — Standard Setup
 1. [What This Tool Does](#1-what-this-tool-does)
@@ -43,7 +43,7 @@
 23. [Customising assets.json](#23-customising-assetsjson)
 24. [Bayesian Hyperparameter Tuning (Optuna)](#24-bayesian-hyperparameter-tuning-optuna)
 25. [REST API Reference](#25-rest-api-reference)
-26. [Troubleshooting Guide](#26-troubleshooting-guide)
+26. [Troubleshooting Guide (13 scenarios)](#26-troubleshooting-guide)
 
 ### Part 5 — Hermes LLM Agent
 27. [What Hermes Is and Why It Gets Better Over Time](#27-what-hermes-is-and-why-it-gets-better-over-time)
@@ -59,11 +59,98 @@
 
 ---
 
-# PART 0 — ABSOLUTE BEGINNER ONBOARDING
+# PART 0 — QUICK START
 
-## 0. Complete Beginner Setup: From Chrome to Running System
+## 0. First-Time Setup
 
-> This section is written for someone who has **never used a terminal**. If you are already comfortable with Git and Python, skip to Part 1.
+> If you already have Git and Python 3.12, jump to step 3.
+
+---
+
+### 0.1 Prerequisites
+
+**Windows:** Install WSL2 first — open PowerShell as Administrator and run:
+```powershell
+wsl --install
+```
+Restart, then use the Ubuntu terminal for everything below.
+
+**macOS / Linux:** You're ready. Open a terminal.
+
+Install Python 3.12 if missing:
+```bash
+# Ubuntu / WSL2
+sudo apt update && sudo apt install -y python3.12 python3.12-venv python3.12-dev
+
+# macOS (Homebrew)
+brew install python@3.12
+```
+
+---
+
+### 0.2 Clone and Configure
+
+```bash
+git clone https://github.com/mrQhere/stock.git
+cd stock
+
+# Dashboard password — required to log into the UI
+mkdir -p .streamlit
+echo 'APP_PASSWORD = "your_strong_password_here"' > .streamlit/secrets.toml
+
+# REST API key — required to call the FastAPI endpoints
+# You invent this value yourself. Make it hard to guess.
+echo 'export QUANT_API_KEY="your_api_key_here"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+**Real examples** (replace with your own values):
+```bash
+# Good password examples:
+APP_PASSWORD = "mQ-alpha-2026-Xr7q"
+APP_PASSWORD = "TCS-RELIANCE-quant99"
+
+# Good API key examples:
+export QUANT_API_KEY="sk-local-mQhere-2026-z9Kp"
+export QUANT_API_KEY="quant-jarvis-v6-prod-key"
+```
+
+> [!NOTE]
+> `QUANT_API_KEY` is read from the environment only — never from `secrets.toml`. `APP_PASSWORD` is read from `secrets.toml` only. They are separate systems.
+
+---
+
+### 0.3 Install Ollama (Optional — enables Hermes AI analysis)
+
+```bash
+# Linux / WSL2
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Pull the model (~2.3 GB, one-time download)
+ollama pull phi3:mini
+
+# Verify
+ollama list  # should show phi3:mini
+```
+
+macOS: download from [https://ollama.com/download](https://ollama.com/download).
+
+If Hermes shows "offline", run `ollama serve` in a separate terminal. The rest of the system works fine without it.
+
+---
+
+### 0.4 Launch
+
+```bash
+chmod +x stock_market_boot.sh
+./stock_market_boot.sh
+```
+
+The script installs deps, syncs all tickers, asks you to pick a mode, then opens the dashboard at `http://localhost:8501`. **First run: 5–20 minutes.** Subsequent runs: near-instant (data cached in `data_lake/quant.db`).
+
+---
+
+
 
 ---
 
@@ -376,30 +463,63 @@ The script will:
 
 ## 4. Setting Your Password and API Key
 
-### UI Password
-The dashboard requires a password every time you open it.
+### UI Password (`APP_PASSWORD`)
 
-Edit `.streamlit/secrets.toml`:
+The dashboard locks behind a password set in `.streamlit/secrets.toml`. This file is in `.gitignore` and is never committed.
+
+```bash
+mkdir -p .streamlit
+nano .streamlit/secrets.toml   # or use any text editor
+```
+
+Contents of the file (just this one line):
 ```toml
-APP_PASSWORD = "my_strong_password_123"
+APP_PASSWORD = "mQ-alpha-2026-Xr7q"
 ```
 
-> This file is in `.gitignore` — it will never be accidentally committed to GitHub.
+If the file is missing, the dashboard opens without any password prompt.
 
-### API Key
-All REST API endpoints except the health check require an `X-API-Key` header. If you skip this, all API calls return `HTTP 401`.
+---
+
+### REST API Key (`QUANT_API_KEY`)
+
+The FastAPI server reads this from the **environment only** — not from `secrets.toml`. Set it before running the boot script:
 
 ```bash
-export QUANT_API_KEY="my_secure_api_key_abc123"
+export QUANT_API_KEY="sk-local-mQhere-z9Kp-2026"
 ```
 
-To make it permanent:
+Make it persist across reboots:
 ```bash
-echo 'export QUANT_API_KEY="my_secure_api_key_abc123"' >> ~/.bashrc
+echo 'export QUANT_API_KEY="sk-local-mQhere-z9Kp-2026"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
+**Verify it is set:**
+```bash
+echo $QUANT_API_KEY
+# Expected: sk-local-mQhere-z9Kp-2026
+```
+
+**Test it against the running server:**
+```bash
+# Health check — no key needed
+curl http://localhost:8000/
+# → {"status": "online", "message": "JARVIS-V6 API Server"}
+
+# Authenticated request
+curl -H "X-API-Key: $QUANT_API_KEY" http://localhost:8000/api/v1/leaderboard
+
+# Wrong key → 401
+curl -H "X-API-Key: wrongkey" http://localhost:8000/api/v1/leaderboard
+# → {"detail": "Invalid or missing API key."}
+```
+
+> [!NOTE]
+> These keys are invented by you — they are not registered with any external service. The value can be any string. Use something with mixed case, numbers, and a hyphen so it is hard to brute-force if your port is ever exposed.
+
 ---
+
 
 ## 5. Starting the System
 
@@ -579,11 +699,11 @@ All persistent state lives in `data_lake/quant.db`. Key tables:
 | `portfolio_weights` | Risk parity weights | backend | UI |
 | `portfolio_trades` | User-entered paper trades | UI | UI |
 
-**WAL mode tip:** If you see `sqlite3.OperationalError: database is locked`, add this to `init_db()`:
+**WAL mode** is enabled by default in `init_db()`:
 ```python
 conn.execute('PRAGMA journal_mode=WAL')
 ```
-WAL (Write-Ahead Logging) allows simultaneous readers while the backend writes, eliminating lock contention entirely.
+WAL (Write-Ahead Logging) allows simultaneous readers while the backend writes, eliminating lock contention entirely. If you see lock errors, you are likely running an old DB — delete `data_lake/quant.db` and restart.
 
 ---
 
@@ -1109,161 +1229,322 @@ The tuned values are hot-reloaded by the backend on the next cycle. You do not n
 
 ## 25. REST API Reference
 
-The FastAPI server runs on `http://localhost:8000`. All `/api/v1/*` endpoints require:
+The FastAPI server starts automatically with `./stock_market_boot.sh` and listens on `http://localhost:8000`. Logs go to `logs/api.log`.
 
-```
-X-API-Key: <your QUANT_API_KEY>
-```
+**Authentication:** all `/api/v1/*` routes require the `X-API-Key` header matching your `QUANT_API_KEY` env var. `GET /` is always public.
+
+---
 
 ### Endpoints
 
-**`GET /`** — Health check (no auth required)
+**`GET /`** — Health check
 ```bash
 curl http://localhost:8000/
-# Response: {"status": "online", "message": "JARVIS-V6 API Server"}
+# {"status": "online", "message": "JARVIS-V6 API Server"}
 ```
 
-**`GET /api/v1/predictions`** — All current predictions
+**`GET /api/v1/leaderboard`** — Summary table of all tracked tickers
 ```bash
-curl -H "X-API-Key: your_key" http://localhost:8000/api/v1/predictions
+curl -s -H "X-API-Key: $QUANT_API_KEY" http://localhost:8000/api/v1/leaderboard | jq .
 ```
-Returns an array of prediction objects. Each includes the full `JSON_Blob` with Monte Carlo paths, ghost arrays, signal, risk metrics, and fundamentals.
+Example response:
+```json
+[
+  {"Asset": "RELIANCE.NS", "Category": "Equity/Large Cap", "Price": "₹2,945.30",
+   "Signal": "BUY ↗️", "Vol": "1.42%", "Prob": "61.3%", "Sharpe": "1.18", "MaxDD": "-14.20%"},
+  {"Asset": "TCS.NS", "Category": "Equity/Large Cap", "Price": "₹3,812.50",
+   "Signal": "HOLD ➖", "Vol": "0.98%", "Prob": "52.1%", "Sharpe": "0.87", "MaxDD": "-11.40%"}
+]
+```
 
-**`GET /api/v1/asset/{ticker}`** — Single asset full breakdown
+**`GET /api/v1/asset/{ticker}`** — Full prediction record for one ticker
 ```bash
-curl -H "X-API-Key: your_key" http://localhost:8000/api/v1/asset/RELIANCE.NS
+curl -s -H "X-API-Key: $QUANT_API_KEY" http://localhost:8000/api/v1/asset/RELIANCE.NS | jq '.JSON_Blob | {Signal, Sharpe, MaxDD, Prob, Piotroski_Score}'
 ```
-Returns the complete prediction record for one ticker.
+Example:
+```json
+{
+  "Signal": "BUY ↗️",
+  "Sharpe": 1.18,
+  "MaxDD": -14.2,
+  "Prob": 61.3,
+  "Piotroski_Score": 7
+}
+```
 
-**`GET /api/v1/leaderboard`** — Summary leaderboard
+**`GET /api/v1/predictions`** — All tickers, full JSON blobs
 ```bash
-curl -H "X-API-Key: your_key" http://localhost:8000/api/v1/leaderboard
+curl -s -H "X-API-Key: $QUANT_API_KEY" http://localhost:8000/api/v1/predictions | jq 'length'
+# prints number of tickers currently tracked
 ```
-Returns the condensed leaderboard table.
 
-### Error codes
-| Code | Meaning |
-|---|---|
-| 200 | Success |
-| 401 | Missing or invalid `X-API-Key` |
-| 404 | Ticker not found in predictions |
-| 503 | `QUANT_API_KEY` not set on server, or database not ready |
+---
 
-### Example: Discord bot integration
+### Error Reference
 
+| Code | Meaning | Fix |
+|---|---|---|
+| 200 | Success | — |
+| 401 | Wrong or missing `X-API-Key` | Check `echo $QUANT_API_KEY` matches what you set |
+| 404 | Ticker not found | Backend hasn't processed it yet, or it's not in `assets.json` |
+| 503 | `QUANT_API_KEY` not set on server, or DB not ready | Set the env var before booting; wait for first cycle to finish |
+
+---
+
+### Integration Examples
+
+**Python script:**
 ```python
-import requests
+import requests, os
 
-API_BASE = "http://localhost:8000/api/v1"
-HEADERS  = {"X-API-Key": "your_secure_api_key"}
+BASE    = "http://localhost:8000/api/v1"
+HEADERS = {"X-API-Key": os.environ["QUANT_API_KEY"]}
 
-def get_signal(ticker):
-    r = requests.get(f"{API_BASE}/asset/{ticker}", headers=HEADERS)
+def signal(ticker):
+    r = requests.get(f"{BASE}/asset/{ticker}", headers=HEADERS, timeout=5)
     if r.status_code == 200:
-        data = r.json()
-        blob = data["JSON_Blob"]
-        return f"{ticker}: {blob['Signal']} | Sharpe: {blob['Sharpe']:.2f}"
+        b = r.json()["JSON_Blob"]
+        return f"{ticker}: {b['Signal']} | Sharpe={b['Sharpe']:.2f} | Prob={b['Prob']:.1f}%"
     return f"Error {r.status_code}"
 
-print(get_signal("RELIANCE.NS"))
+print(signal("RELIANCE.NS"))
+# RELIANCE.NS: BUY ↗️ | Sharpe=1.18 | Prob=61.3%
+```
+
+**Telegram / Discord bot pattern:**
+```python
+# Poll every hour, alert on STRONG BUY or STRONG SELL
+import requests, time, os
+
+HEADERS = {"X-API-Key": os.environ["QUANT_API_KEY"]}
+
+while True:
+    lb = requests.get("http://localhost:8000/api/v1/leaderboard", headers=HEADERS).json()
+    alerts = [r for r in lb if "STRONG" in r.get("Signal", "")]
+    for a in alerts:
+        print(f"ALERT: {a['Asset']} → {a['Signal']} | Sharpe {a['Sharpe']}")
+    time.sleep(3600)
 ```
 
 ---
 
 ## 26. Troubleshooting Guide
 
-### 26.1 System stuck at "Calculating..." during boot
+### 26.1 Boot stuck at "Calculating..." / progress bar frozen
 
-**Cause:** The backend crashed silently during import or `assets.json` is malformed.
+The backend crashed silently or `assets.json` is invalid.
 
 ```bash
-# Check if backend is running
+# Is it running?
 ps aux | grep stock_market_backend.py
 
-# If not running, run manually to see the error
+# Check the log for the actual error
+tail -50 logs/backend.log
+
+# Run it manually to see the exception in real-time
 source jarvis_env/bin/activate
 python stock_market_backend.py
 ```
 
-Common causes:
-- `assets.json` has a trailing comma (invalid JSON)
-- A required library failed to install (check `logs/backend.log`)
-- OpenMP thread collision between PyTorch and XGBoost — fix: add `OMP_NUM_THREADS=1` before the `nohup` line in `stock_market_boot.sh`
+Common root causes:
 
-### 26.2 UI shows "Failed to load prediction JSON"
+| Symptom in log | Fix |
+|---|---|
+| `json.JSONDecodeError` | Trailing comma in `assets.json` — validate with `python -m json.tool assets.json` |
+| `ModuleNotFoundError` | `pip install -r requirements.txt` inside `jarvis_env` |
+| `OMP: Error #15` (OpenMP clash between PyTorch + XGBoost) | Add `OMP_NUM_THREADS=1` before the backend `nohup` line in `stock_market_boot.sh` |
+| `torch` import hangs | CPU PyTorch not installed — run `pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu` |
 
-**Cause:** The `predictions` table in `quant.db` is empty or corrupted.
+---
+
+### 26.2 UI shows "Failed to load prediction JSON" or blank dashboard
+
+The `predictions` table is empty — backend either hasn't finished the first cycle or the DB is corrupted.
 
 ```bash
-# Inspect the database
+# Quick DB health check
 source jarvis_env/bin/activate
 python -c "
 import sqlite3
 conn = sqlite3.connect('data_lake/quant.db')
-print('Rows in predictions:', conn.execute('SELECT COUNT(*) FROM predictions').fetchone()[0])
-print('Rows in historical_data:', conn.execute('SELECT COUNT(*) FROM historical_data').fetchone()[0])
+print('predictions:', conn.execute('SELECT COUNT(*) FROM predictions').fetchone()[0])
+print('historical_data:', conn.execute('SELECT COUNT(*) FROM historical_data').fetchone()[0])
+print('leaderboard:', conn.execute('SELECT COUNT(*) FROM leaderboard').fetchone()[0])
 "
 
-# If the DB is corrupted, delete and let the backend recreate it
+# If all zeros — backend is still on first cycle. Watch the progress bar.
+# If DB is corrupted / schema mismatch:
 rm -f data_lake/quant.db
 ./stock_market_boot.sh
 ```
 
-### 26.3 "HTTP Error 429 Too Many Requests" in backend.log
+---
 
-**Cause:** Yahoo Finance rate-limited your IP. You are fetching too many tickers too quickly.
+### 26.3 API returns HTTP 401
 
-**Fix:** The system already has per-ticker timeouts. Wait 15–30 minutes and restart. If it persists:
-- Reduce the number of tickers in `assets.json`
-- Consider adding a `time.sleep(2)` between tickers in `fetch_and_store()` (not done by default to avoid making full cycles very slow)
-
-### 26.4 Port already in use
+`QUANT_API_KEY` is not set, set incorrectly, or not in scope for the running process.
 
 ```bash
-# Find what is using Streamlit's port
-lsof -i :8501
-kill -9 <PID>
+# Check current shell
+echo $QUANT_API_KEY
 
-# Find what is using FastAPI's port
-lsof -i :8000
-kill -9 <PID>
+# If blank, set it and re-export before booting
+export QUANT_API_KEY="sk-local-mQhere-z9Kp-2026"
+./stock_market_boot.sh
 
-# Or kill all at once
+# Verify against live server
+curl -s -H "X-API-Key: $QUANT_API_KEY" http://localhost:8000/api/v1/leaderboard
+```
+
+> [!IMPORTANT]
+> The API server inherits env vars from the shell that ran `./stock_market_boot.sh`. If you set `QUANT_API_KEY` after the server started, restart: `pkill -f uvicorn && ./stock_market_boot.sh`
+
+---
+
+### 26.4 API returns HTTP 503
+
+Either `QUANT_API_KEY` was not set in the environment when the server launched, or `data_lake/quant.db` doesn't exist yet (first cycle incomplete).
+
+```bash
+tail -20 logs/api.log     # look for startup errors
+tail -20 logs/backend.log # look for first-cycle completion
+```
+
+---
+
+### 26.5 Yahoo Finance HTTP 429 (rate limited)
+
+Too many tickers fetched too quickly. The system has 20s per-ticker timeouts but Yahoo still rate-limits at the IP level.
+
+**Fix:**
+1. Wait 15–30 minutes and restart
+2. Reduce ticker count in `assets.json`
+3. If persistent, add a sleep between fetches in `stock_market_backend.py` → `fetch_and_store()`:
+```python
+time.sleep(1.5)   # add before the return statement
+```
+
+---
+
+### 26.6 Port already in use
+
+```bash
+# Kill all three services at once
 pkill -f stock_market_backend.py
 pkill -f stock_market_ui.py
 pkill -f uvicorn
+
+# Or find the specific PID
+lsof -i :8501   # Streamlit
+lsof -i :8000   # FastAPI
+kill -9 <PID>
 ```
-
-### 26.5 Database locked errors
-
-```bash
-# Add WAL mode to init_db() in stock_market_backend.py:
-# conn.execute('PRAGMA journal_mode=WAL')
-```
-
-WAL (Write-Ahead Logging) allows the Streamlit UI to read while the backend is writing. Without it, the default SQLite journal mode exclusively locks the file during writes.
-
-### 26.6 Piotroski Score shows N/A for all stocks
-
-**Cause:** yfinance's `.financials`, `.balance_sheet`, or `.cashflow` returned empty DataFrames. This is common for:
-- ETFs (no income statements)
-- Indices (no financials)
-- Recently listed companies (< 2 years of statements)
-- Some smaller NSE-listed companies with incomplete yfinance coverage
-
-This is expected behaviour. The system logs the issue and continues. The rest of the analysis is unaffected.
-
-### 26.7 LSTM ghost path is missing from the chart
-
-**Cause:** `train_lstm()` returned `(None, None)`. This happens when there are fewer than 100 training sequences (typically < 200 days of data after dropna).
-
-The system falls back gracefully — only the XGBoost ghost is shown. No error is raised.
-
-### 26.8 SIP calculator shows "CAGR not available"
-
-**Cause:** The ticker has fewer than 200 days of price history in `historical_data`, which is the minimum required for a meaningful CAGR calculation. Newly added tickers may show this for the first cycle until 5 years of data accumulates.
 
 ---
+
+### 26.7 Database locked / sqlite3.OperationalError
+
+WAL mode is already enabled in `init_db()` as of the current codebase (`PRAGMA journal_mode=WAL`). If you are seeing lock errors on an older DB created before this fix, delete it and let the backend recreate it:
+
+```bash
+rm -f data_lake/quant.db
+./stock_market_boot.sh
+```
+
+---
+
+### 26.8 Hermes panel shows "offline or first cycle"
+
+Either Ollama is not running, or this is the first backend cycle.
+
+```bash
+# Check if Ollama is running
+curl http://localhost:11434/
+# Expected: {"status":"ok"} or similar
+
+# If not running:
+ollama serve &   # starts in background
+
+# Check the model is pulled
+ollama list      # should show phi3:mini
+
+# Pull it if missing:
+ollama pull phi3:mini
+```
+
+Hermes analysis is generated during the backend compute cycle, not on UI page load. If Ollama starts after the backend has already run, the analysis appears on the **next** cycle (≤60 min).
+
+---
+
+### 26.9 Signal is always HOLD for a specific ticker
+
+Two auto-demotion guards can cap BUY signals:
+
+1. **Overfitting guard** — holdout R² / train R² < 0.4: the model is memorising training data
+2. **Accuracy guard** — 30-day walk-forward accuracy < 45%: recent signals have been directionally wrong
+
+Check which guard triggered:
+```bash
+source jarvis_env/bin/activate
+python -c "
+import sqlite3, json
+conn = sqlite3.connect('data_lake/quant.db')
+row = conn.execute(\"SELECT JSON_Blob FROM predictions WHERE Ticker = 'RELIANCE.NS'\").fetchone()
+if row:
+    b = json.loads(row[0])
+    print('Overfit_Flag:', b.get('Overfit_Flag'))
+    print('Overfit_Score:', b.get('Overfit_Score'))
+    print('Walk30_Accuracy:', b.get('Walk30_Accuracy'))
+    print('Accuracy_Flag:', b.get('Accuracy_Flag'))
+"
+```
+
+If both flags are False but signal is still HOLD, the base `generate_signal()` risk gate fired (MaxDD ≤ −20, or BEAR + negative Sharpe). Check `MaxDD` and `Sharpe` in the quant metrics row.
+
+---
+
+### 26.10 Piotroski Score shows N/A
+
+Expected for: ETFs, indices, REITs, recently IPO'd companies (< 2 years of statements), and some smaller NSE tickers with incomplete yfinance coverage. The score requires at least 2 years of financial statements. The rest of the analysis is unaffected.
+
+---
+
+### 26.11 LSTM ghost path missing from chart
+
+`train_lstm()` returned `(None, None)` — fewer than 100 training sequences available (typically < 200 days of data after indicator calculation and dropna). Only XGBoost ghost is shown. No action needed; this corrects itself as data accumulates.
+
+---
+
+### 26.12 Virtual environment / `jarvis_env` not found
+
+```bash
+# Recreate from scratch
+rm -rf jarvis_env
+./stock_market_boot.sh
+
+# Or manually:
+python3.12 -m venv jarvis_env
+source jarvis_env/bin/activate
+pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements.txt
+```
+
+---
+
+### 26.13 `ModuleNotFoundError: No module named 'ollama'`
+
+The `ollama` Python client was added to `requirements.txt`. If you installed before this change, update the venv:
+
+```bash
+source jarvis_env/bin/activate
+pip install ollama httpx
+```
+
+Hermes degrades gracefully if `ollama` is not importable — the rest of the system is unaffected.
+
+---
+
+
 
 # PART 5 — HERMES LLM AGENT
 

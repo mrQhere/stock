@@ -22,10 +22,9 @@ def test_generate_signal():
     # Bear mode, negative sharpe, negative pr -> SELL
     assert "SELL" in generate_signal(pr=-2.0, sharpe=-0.5, max_dd=-20.0, market_mode="BEAR 🐻", sentiment=-0.3)
 
-    # BULL mode, catastrophic drawdown, high pr -> should NOT be an uncapped STRONG BUY
-    # (this is the max_dd blind spot: currently generate_signal ignores max_dd entirely
-    # outside the BEAR+sharpe<0 branch, so this test documents the gap and will fail
-    # until max_dd is actually used as a cap condition)
+    # BULL mode, catastrophic drawdown, high pr -> should NOT be an uncapped STRONG BUY.
+    # max_dd <= -20 is now an active risk gate: it caps ANY BUY-side signal to HOLD.
+    # This test confirms the fix landed in commit 1a42eac.
     assert "STRONG BUY" not in generate_signal(pr=6.0, sharpe=0.1, max_dd=-35.0, market_mode="BULL 🐂", sentiment=0.3)
 
 def test_technical_indicators_and_risk():

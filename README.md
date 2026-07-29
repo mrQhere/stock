@@ -26,8 +26,10 @@ Designed for researchers and long-term investors, this system fuses tree-based g
 - [Core Architecture](#-core-architecture)
 - [Two Modes: Investor & Advanced](#-two-modes-investor--advanced)
 - [Setup & Installation](#-setup--installation)
-- [Security: Passwords & API Keys](#-security-passwords--api-keys)
+- [Setting Authentication](#-setting-authentication)
+- [REST API](#-rest-api-optional)
 - [Tech Stack](#-tech-stack)
+- [Optional Tools](#-optional-tools)
 
 ---
 
@@ -120,37 +122,71 @@ The boot script will:
 
 ---
 
-## 🔐 Security: Passwords & API Keys
+## 🔐 Setting Authentication
 
-### UI Password
-Create `.streamlit/secrets.toml`:
-```toml
-APP_PASSWORD = "your_secure_password"
+### Dashboard Password (Optional)
+
+The Streamlit UI checks for `APP_PASSWORD` in `.streamlit/secrets.toml`. If the file is missing, the dashboard opens without any password prompt.
+
+```bash
+mkdir -p .streamlit
+cp secrets.toml.example .streamlit/secrets.toml
+# Then edit .streamlit/secrets.toml and set your password
 ```
-This file is listed in `.gitignore` and will never be committed.
 
-### API Key (`QUANT_API_KEY`) — **Required for API access**
-The FastAPI server (`/api/v1/*`) requires an `X-API-Key` header on every request. Set the key as an environment variable before booting:
+Or in one line:
+```bash
+mkdir -p .streamlit
+echo 'APP_PASSWORD = "your_secure_password"' > .streamlit/secrets.toml
+```
+
+> This file is in `.gitignore` and will never be committed to GitHub.
+
+### API Key (`QUANT_API_KEY`) — Required for REST API
+
+`QUANT_API_KEY` is read from the **environment only** — it is not loaded from `secrets.toml`. Set it before starting the system:
 
 ```bash
 export QUANT_API_KEY="your_secure_api_key"
+# Then boot normally:
+./stock_market_boot.sh
 ```
 
-**Example API calls:**
+To persist across reboots:
 ```bash
-# List all predictions
-curl -H "X-API-Key: your_secure_api_key" http://localhost:8000/api/v1/predictions
-
-# Get a specific asset's full JSON blob
-curl -H "X-API-Key: your_secure_api_key" http://localhost:8000/api/v1/asset/RELIANCE.NS
-
-# Get the leaderboard
-curl -H "X-API-Key: your_secure_api_key" http://localhost:8000/api/v1/leaderboard
+echo 'export QUANT_API_KEY="your_secure_api_key"' >> ~/.bashrc
+source ~/.bashrc
 ```
 
-Without the key, all `/api/v1/*` endpoints return `HTTP 401 Unauthorized`. `GET /` returns `HTTP 200` and is the health check.
+Without this key, all `/api/v1/*` endpoints return `HTTP 401 Unauthorized`. `GET /` is always accessible as a health check.
 
-See `secrets.toml.example` for a full template.
+---
+
+## 🔌 REST API (Optional)
+
+The system includes a FastAPI server that exposes all predictions via HTTP. It starts automatically alongside the backend and UI when you run `./stock_market_boot.sh`.
+
+**Base URL:** `http://localhost:8000`  
+**Logs:** `logs/api.log`
+
+All `/api/v1/*` routes require the `X-API-Key` header:
+
+```bash
+# Health check (no key required)
+curl http://localhost:8000/
+# → {"status": "online", "message": "JARVIS-V6 API Server"}
+
+# All current predictions
+curl -H "X-API-Key: $QUANT_API_KEY" http://localhost:8000/api/v1/predictions
+
+# Single asset full breakdown
+curl -H "X-API-Key: $QUANT_API_KEY" http://localhost:8000/api/v1/asset/RELIANCE.NS
+
+# Summary leaderboard
+curl -H "X-API-Key: $QUANT_API_KEY" http://localhost:8000/api/v1/leaderboard
+```
+
+For the full API reference including error codes and integration examples, see **USER_GUIDE.md → Section 25**.
 
 ---
 
@@ -161,12 +197,35 @@ See `secrets.toml.example` for a full template.
 | **Deep Learning** | PyTorch (LSTM) | 2.3.1 (CPU) |
 | **Machine Learning** | XGBoost | 3.3.0 |
 | **Hyperparameter Tuning** | Optuna (Bayesian) | 3.6.1 |
+| **LLM Agent** | Ollama + phi3:mini | local |
 | **NLP** | vaderSentiment | 3.3.2 |
 | **GARCH Volatility** | arch | 8.0.0 |
 | **Market Data** | yfinance | 1.5.2 |
 | **API & DB** | FastAPI, Uvicorn, SQLite3 | 0.115.12 / 0.34.3 |
 | **Frontend UI** | Streamlit, Plotly | 1.60.0 / 6.9.0 |
 | **Data** | pandas, numpy | 3.0.5 / 2.5.1 |
+
+---
+
+## 🔬 Optional Tools
+
+### Manual Hyperparameter Tuning
+
+`hyperparameter_tuning.py` is a **standalone offline utility** for researchers who want to run Bayesian optimisation (Optuna) over XGBoost hyperparameters for every ticker in the database.
+
+**Why it's optional:** The backend already reads tuned params from `data_lake/hyperparams.json` if that file exists. This script is for running a deeper, offline search — not a background daemon.
+
+**Prerequisites:** The backend must have completed at least one cycle so `data_lake/quant.db` contains `historical_data` rows.
+
+```bash
+source jarvis_env/bin/activate
+python hyperparameter_tuning.py
+```
+
+Results are written to `data_lake/hyperparams.json`. The backend hot-reloads this file at the start of every new cycle — no restart required.
+
+> [!NOTE]
+> This script is not called by `stock_market_boot.sh` and has no automatic scheduling. Run it manually when you want a deeper parameter search (e.g., after adding new tickers or if holdout R² has been degrading).
 
 ---
 
