@@ -90,7 +90,7 @@ You can also flip the **Advanced Mode** toggle in the sidebar at any time — no
 
 ## 🚀 Setup & Installation
 
-> **Prerequisites:** Python 3.12+, Git, bash (Linux/macOS). Windows users: use WSL2.
+> **Prerequisites:** Linux (Ubuntu 22.04+ recommended), Python 3.12+, Git.
 
 ```bash
 # 1. Clone the repository

@@ -43,7 +43,7 @@
 23. [Customising assets.json](#23-customising-assetsjson)
 24. [Bayesian Hyperparameter Tuning (Optuna)](#24-bayesian-hyperparameter-tuning-optuna)
 25. [REST API Reference](#25-rest-api-reference)
-26. [Troubleshooting Guide (13 scenarios)](#26-troubleshooting-guide)
+26. [Troubleshooting & Complete Reset](#26-troubleshooting--complete-reset)
 
 ### Part 5 — Hermes LLM Agent
 27. [What Hermes Is and Why It Gets Better Over Time](#27-what-hermes-is-and-why-it-gets-better-over-time)
@@ -81,21 +81,11 @@
 
 ### 0.1 Prerequisites
 
-**Windows:** Install WSL2 first — open PowerShell as Administrator and run:
-```powershell
-wsl --install
-```
-Restart, then use the Ubuntu terminal for everything below.
-
-**macOS / Linux:** You're ready. Open a terminal.
+**Linux (Ubuntu 22.04+ recommended):** Open a terminal.
 
 Install Python 3.12 if missing:
 ```bash
-# Ubuntu / WSL2
 sudo apt update && sudo apt install -y python3.12 python3.12-venv python3.12-dev
-
-# macOS (Homebrew)
-brew install python@3.12
 ```
 
 ---
@@ -130,12 +120,14 @@ export QUANT_API_KEY="quant-stock-v1-prod-key"
 > [!NOTE]
 > `QUANT_API_KEY` is read from the environment only — never from `secrets.toml`. `APP_PASSWORD` is read from `secrets.toml` only. They are separate systems.
 
+> **Troubleshooting Auth Errors (401 / 403):**
+> If you get an `Invalid or missing API key` error, ensure you exported `QUANT_API_KEY` in the exact terminal where you run `./stock_market_boot.sh`. To make it permanent, add it to `~/.bashrc` and run `source ~/.bashrc`. If the UI rejects your password, double-check `.streamlit/secrets.toml`.
+
 ---
 
 ### 0.3 Install Ollama (Optional — enables Hermes AI analysis)
 
 ```bash
-# Linux / WSL2
 curl -fsSL https://ollama.com/install.sh | sh
 
 # Pull the model (~2.3 GB, one-time download)
@@ -145,9 +137,11 @@ ollama pull phi3:mini
 ollama list  # should show phi3:mini
 ```
 
-macOS: download from [https://ollama.com/download](https://ollama.com/download).
-
 If Hermes shows "offline", run `ollama serve` in a separate terminal. The rest of the system works fine without it.
+
+> **Troubleshooting Ollama:**
+> - **Connection Refused:** Run `ollama serve` in a separate terminal.
+> - **Model Not Found:** Run `ollama pull phi3:mini`.
 
 ---
 
@@ -160,239 +154,15 @@ chmod +x stock_market_boot.sh
 
 The script installs deps, syncs all tickers, asks you to pick a mode, then opens the dashboard at `http://localhost:8501`. **First run: 5–20 minutes.** Subsequent runs: near-instant (data cached in `data_lake/quant.db`).
 
----
-
-
-
----
-
-### 0.1 What You Are Going to Install
-
-| Software | What it does | Size |
-|---|---|---|
-| Git | Downloads the code from GitHub | ~50 MB |
-| Python 3.12 | Runs the code | ~100 MB |
-| Ollama (optional) | Runs the Hermes AI brain locally | ~50 MB app + ~2.3 GB model |
-| The repo itself | The actual trading terminal | ~5 MB |
+> **Troubleshooting Boot Issues:**
+> - **Port 8000/8501 in use:** Run `pkill -f uvicorn` and `pkill -f streamlit`.
+> - **Missing Modules:** If the log complains about missing PyTorch or XGBoost, run `source stock_env/bin/activate` then `pip install -r requirements.txt`.
 
 ---
 
-### 0.2 What Is a "Terminal"?
 
-A terminal (also called a shell, command prompt, or console) is a text window where you type commands. You will use it throughout this guide.
-
-**On Windows** → search "Windows PowerShell" in the Start menu. Right-click → "Run as Administrator".
-> [!IMPORTANT]
-> Windows users: This project requires **WSL2** (Windows Subsystem for Linux). Follow Step 0.3 first.
-
-**On macOS** → press `Cmd + Space`, type "Terminal", press Enter.
-
-**On Linux (Ubuntu/Debian)** → press `Ctrl + Alt + T`.
 
 ---
-
-### 0.3 Windows Only: Install WSL2
-
-This step gives Windows users a real Linux environment. Skip if on macOS or Linux.
-
-Open PowerShell **as Administrator** and run:
-```powershell
-wsl --install
-```
-This installs Ubuntu. Restart your computer when prompted. After restarting, Ubuntu will open and ask you to create a username and password. **Remember this password** — you will need it.
-
-From now on, use the **Ubuntu terminal** (not PowerShell) for all commands in this guide.
-
----
-
-### 0.4 Install Git
-
-**Check if already installed:**
-```bash
-git --version
-```
-If you see `git version 2.x.x`, skip this step.
-
-**Linux / WSL2 (Ubuntu):**
-```bash
-sudo apt update && sudo apt install -y git
-```
-
-**macOS:**
-```bash
-# Install Homebrew first if not present:
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-# Then install git:
-brew install git
-```
-
-**Verify:**
-```bash
-git --version
-# Expected: git version 2.x.x
-```
-
----
-
-### 0.5 Install Python 3.12
-
-**Check if already installed:**
-```bash
-python3 --version
-```
-If you see `Python 3.12.x`, skip this step.
-
-**Linux / WSL2 (Ubuntu):**
-```bash
-sudo apt update
-sudo apt install -y software-properties-common
-sudo add-apt-repository -y ppa:deadsnakes/ppa
-sudo apt install -y python3.12 python3.12-venv python3.12-dev
-```
-
-**macOS:**
-```bash
-brew install python@3.12
-```
-
-**Verify:**
-```bash
-python3.12 --version
-# Expected: Python 3.12.x
-```
-
----
-
-### 0.6 What Is a GitHub Repository?
-
-GitHub is a website that stores code. A "repository" (repo) is a folder of code. Cloning means downloading a copy to your computer.
-
-The `git clone` command does the download:
-```bash
-git clone https://github.com/mrQhere/stock.git
-```
-This creates a folder called `stock/` in your current directory.
-
----
-
-### 0.7 Clone and Enter the Repo
-
-```bash
-# Navigate to your home directory first (safe default location)
-cd ~
-
-# Clone the repo
-git clone https://github.com/mrQhere/stock.git
-
-# Enter the folder
-cd stock
-
-# Verify you are in the right place — you should see these files
-ls
-# Expected output includes: stock_market_backend.py, stock_market_ui.py, etc.
-```
-
----
-
-### 0.8 What Is an API Key?
-
-An API key is a secret password that identifies your application when it calls a web service. In this system:
-
-- **`APP_PASSWORD`** — the password to log into the dashboard in your browser
-- **`QUANT_API_KEY`** — a key you invent yourself to protect the REST API endpoints (port 8000)
-
-You **make up** both of these values yourself. They do not need to be registered anywhere. Pick something hard to guess.
-
-**Good example:** `my-quant-key-2026-Xr7q`
-**Bad example:** `password` or `1234`
-
-#### Create your password file:
-```bash
-# While inside the stock/ folder:
-mkdir -p .streamlit
-cat > .streamlit/secrets.toml << 'EOF'
-APP_PASSWORD = "replace_with_your_chosen_password"
-EOF
-```
-
-#### Set your API key (persists across reboots):
-```bash
-echo 'export QUANT_API_KEY="replace_with_your_chosen_api_key"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-> [!NOTE]
-> The `.streamlit/secrets.toml` file is in `.gitignore`. It will never be uploaded to GitHub even if you push changes.
-
----
-
-### 0.9 Install Ollama (Optional but Recommended)
-
-Ollama lets you run AI language models locally — no internet, no subscriptions. The Hermes agent uses it to explain signals in plain English.
-
-**Linux / WSL2:**
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-```
-
-**macOS:**
-Download the installer from [https://ollama.com/download](https://ollama.com/download) and double-click it.
-
-**Download the AI model (phi3:mini, ~2.3 GB):**
-```bash
-ollama pull phi3:mini
-```
-This takes 5–15 minutes depending on your internet speed. Do it once; the model is cached permanently.
-
-**Verify Ollama is running:**
-```bash
-ollama list
-# Expected: shows phi3:mini in the list
-```
-
-> [!NOTE]
-> Ollama starts automatically on most systems. If Hermes says "offline", manually start it with `ollama serve` in a separate terminal.
-
----
-
-### 0.10 Run the System
-
-```bash
-# Make the boot script executable (one-time)
-chmod +x stock_market_boot.sh
-
-# Launch everything
-./stock_market_boot.sh
-```
-
-The script will:
-1. Create a Python virtual environment (`stock_env/`)
-2. Install all dependencies (~5–20 minutes on first run)
-3. Launch the backend data engine in the background
-4. Show a progress bar while tickers are compiled
-5. Ask you to choose Investor or Advanced mode
-6. Open the dashboard in your browser at `http://localhost:8501`
-
-> **First run takes 5–20 minutes.** After that, subsequent starts are fast because data is cached.
-
----
-
-### 0.11 Summary Checklist for New Users
-
-```
-✅ WSL2 installed (Windows only)
-✅ Git installed and verified
-✅ Python 3.12 installed and verified
-✅ Repo cloned to ~/stock/
-✅ .streamlit/secrets.toml created with your password
-✅ QUANT_API_KEY exported to ~/.bashrc
-✅ Ollama installed and phi3:mini pulled (optional but recommended)
-✅ ./stock_market_boot.sh executed
-✅ Dashboard opened in browser
-```
-
----
-
 # PART 1 — STANDARD SETUP
 
 ## 1. What This Tool Does
@@ -419,7 +189,7 @@ This is a **locally-hosted quantitative research terminal**. It downloads 5 year
 
 | Requirement | Minimum | Recommended |
 |---|---|---|
-| OS | Linux, macOS, Windows (WSL2) | Ubuntu 22.04 LTS |
+| OS | Linux | Ubuntu 22.04 LTS |
 | Python | 3.12 | 3.12 |
 | RAM | 4 GB | 8 GB |
 | Storage | 3 GB free | 10 GB free |
@@ -1340,224 +1110,78 @@ while True:
 
 ---
 
-## 26. Troubleshooting Guide
+## 26. Troubleshooting & Complete Reset
 
-### 26.1 Boot stuck at "Calculating..." / progress bar frozen
+This section covers critical errors and how to completely wipe the system to start fresh on Linux.
 
-The backend crashed silently or `assets.json` is invalid.
-
+### T1. Database Corruption (`database disk image is malformed`)
+If the system crashed mid-write or the WAL file became corrupt:
 ```bash
-# Is it running?
-ps aux | grep stock_market_backend.py
-
-# Check the log for the actual error
-tail -50 logs/backend.log
-
-# Run it manually to see the exception in real-time
-source stock_env/bin/activate
-python src/stock_market_backend.py
-```
-
-Common root causes:
-
-| Symptom in log | Fix |
-|---|---|
-| `json.JSONDecodeError` | Trailing comma in `assets.json` — validate with `python -m json.tool assets.json` |
-| `ModuleNotFoundError` | `pip install -r requirements.txt` inside `stock_env` |
-| `OMP: Error #15` (OpenMP clash between PyTorch + XGBoost) | Add `OMP_NUM_THREADS=1` before the backend `nohup` line in `stock_market_boot.sh` |
-| `torch` import hangs | CPU PyTorch not installed — run `pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu` |
-
----
-
-### 26.2 UI shows "Failed to load prediction JSON" or blank dashboard
-
-The `predictions` table is empty — backend either hasn't finished the first cycle or the DB is corrupted.
-
-```bash
-# Quick DB health check
-source stock_env/bin/activate
-python -c "
-import sqlite3
-conn = sqlite3.connect('data_lake/quant.db')
-print('predictions:', conn.execute('SELECT COUNT(*) FROM predictions').fetchone()[0])
-print('historical_data:', conn.execute('SELECT COUNT(*) FROM historical_data').fetchone()[0])
-print('leaderboard:', conn.execute('SELECT COUNT(*) FROM leaderboard').fetchone()[0])
-"
-
-# If all zeros — backend is still on first cycle. Watch the progress bar.
-# If DB is corrupted / schema mismatch:
-rm -f data_lake/quant.db
+rm data_lake/quant.db*
+# Restart the system to regenerate it
 ./stock_market_boot.sh
 ```
 
----
-
-### 26.3 API returns HTTP 401
-
-`QUANT_API_KEY` is not set, set incorrectly, or not in scope for the running process.
-
+### T2. Ghost Processes (Backend/UI Hanging)
+If you can't start the system because ports are occupied or old instances are running:
 ```bash
-# Check current shell
-echo $QUANT_API_KEY
-
-# If blank, set it and re-export before booting
-export QUANT_API_KEY="sk-local-mQhere-z9Kp-2026"
-./stock_market_boot.sh
-
-# Verify against live server
-curl -s -H "X-API-Key: $QUANT_API_KEY" http://localhost:8000/api/v1/leaderboard
-```
-
-> [!IMPORTANT]
-> The API server inherits env vars from the shell that ran `./stock_market_boot.sh`. If you set `QUANT_API_KEY` after the server started, restart: `pkill -f uvicorn && ./stock_market_boot.sh`
-
----
-
-### 26.4 API returns HTTP 503
-
-Either `QUANT_API_KEY` was not set in the environment when the server launched, or `data_lake/quant.db` doesn't exist yet (first cycle incomplete).
-
-```bash
-tail -20 logs/api.log     # look for startup errors
-tail -20 logs/backend.log # look for first-cycle completion
-```
-
----
-
-### 26.5 Yahoo Finance HTTP 429 (rate limited)
-
-Too many tickers fetched too quickly. The system has 20s per-ticker timeouts but Yahoo still rate-limits at the IP level.
-
-**Fix:**
-1. Wait 15–30 minutes and restart
-2. Reduce ticker count in `assets.json`
-3. If persistent, add a sleep between fetches in `stock_market_backend.py` → `fetch_and_store()`:
-```python
-time.sleep(1.5)   # add before the return statement
-```
-
----
-
-### 26.6 Port already in use
-
-```bash
-# Kill all three services at once
 pkill -f stock_market_backend.py
-pkill -f stock_market_ui.py
 pkill -f uvicorn
-
-# Or find the specific PID
-lsof -i :8501   # Streamlit
-lsof -i :8000   # FastAPI
-kill -9 <PID>
+pkill -f streamlit
 ```
 
----
-
-### 26.7 Database locked / sqlite3.OperationalError
-
-WAL mode is already enabled in `init_db()` as of the current codebase (`PRAGMA journal_mode=WAL`). If you are seeing lock errors on an older DB created before this fix, delete it and let the backend recreate it:
-
+### T3. `pip` externally managed environment error (Ubuntu 24.04+)
+If `pip install` fails with `externally-managed-environment`:
 ```bash
-rm -f data_lake/quant.db
-./stock_market_boot.sh
-```
-
----
-
-### 26.8 Hermes panel shows "offline or first cycle"
-
-Either Ollama is not running, or this is the first backend cycle.
-
-```bash
-# Check if Ollama is running
-curl http://localhost:11434/
-# Expected: {"status":"ok"} or similar
-
-# If not running:
-ollama serve &   # starts in background
-
-# Check the model is pulled
-ollama list      # should show phi3:mini
-
-# Pull it if missing:
-ollama pull phi3:mini
-```
-
-Hermes analysis is generated during the backend compute cycle, not on UI page load. If Ollama starts after the backend has already run, the analysis appears on the **next** cycle (≤60 min).
-
----
-
-### 26.9 Signal is always HOLD for a specific ticker
-
-Two auto-demotion guards can cap BUY signals:
-
-1. **Overfitting guard** — holdout R² / train R² < 0.4: the model is memorising training data
-2. **Accuracy guard** — 30-day walk-forward accuracy < 45%: recent signals have been directionally wrong
-
-Check which guard triggered:
-```bash
+# Ensure you are inside the virtual environment BEFORE running pip!
 source stock_env/bin/activate
-python -c "
-import sqlite3, json
-conn = sqlite3.connect('data_lake/quant.db')
-row = conn.execute(\"SELECT JSON_Blob FROM predictions WHERE Ticker = 'RELIANCE.NS'\").fetchone()
-if row:
-    b = json.loads(row[0])
-    print('Overfit_Flag:', b.get('Overfit_Flag'))
-    print('Overfit_Score:', b.get('Overfit_Score'))
-    print('Walk30_Accuracy:', b.get('Walk30_Accuracy'))
-    print('Accuracy_Flag:', b.get('Accuracy_Flag'))
-"
-```
-
-If both flags are False but signal is still HOLD, the base `generate_signal()` risk gate fired (MaxDD ≤ −20, or BEAR + negative Sharpe). Check `MaxDD` and `Sharpe` in the quant metrics row.
-
----
-
-### 26.10 Piotroski Score shows N/A
-
-Expected for: ETFs, indices, REITs, recently IPO'd companies (< 2 years of statements), and some smaller NSE tickers with incomplete yfinance coverage. The score requires at least 2 years of financial statements. The rest of the analysis is unaffected.
-
----
-
-### 26.11 LSTM ghost path missing from chart
-
-`train_lstm()` returned `(None, None)` — fewer than 100 training sequences available (typically < 200 days of data after indicator calculation and dropna). Only XGBoost ghost is shown. No action needed; this corrects itself as data accumulates.
-
----
-
-### 26.12 Virtual environment / `stock_env` not found
-
-```bash
-# Recreate from scratch
-rm -rf stock_env
-./stock_market_boot.sh
-
-# Or manually:
-python3.12 -m venv stock_env
-source stock_env/bin/activate
-pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 ```
 
----
-
-### 26.13 `ModuleNotFoundError: No module named 'ollama'`
-
-The `ollama` Python client was added to `requirements.txt`. If you installed before this change, update the venv:
-
+### T4. Out of Memory (OOM Killer)
+If the backend silently dies during XGBoost training or Ollama text generation:
+- Check `dmesg -T | grep -i oom`
+- Create a larger swap file:
 ```bash
-source stock_env/bin/activate
-pip install ollama httpx
+sudo fallocate -l 4G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
 ```
 
-Hermes degrades gracefully if `ollama` is not importable — the rest of the system is unaffected.
+### T5. Permission Denied on `stock_market_boot.sh`
+```bash
+chmod +x stock_market_boot.sh
+```
+
+### T6. Completely Wiping State (Nuke & Pave)
+If you want to start from absolute zero:
+```bash
+# Stop all processes
+pkill -f stock_market
+pkill -f uvicorn
+
+# Delete all data and environment
+rm -rf data_lake/
+rm -rf logs/
+rm -rf stock_env/
+rm -rf __pycache__ src/__pycache__
+
+# Run setup again
+./stock_market_boot.sh
+```
+
+### T7. Signal Demotion Confusion (BUY became HOLD)
+If the XGBoost model outputs a `STRONG BUY` but the UI shows `HOLD`, check `logs/backend.log`. The Anti-Overfitting guards (e.g., Holdout R² < 0.1 or Max Drawdown < -20%) will forcibly cap BUY signals to HOLD to protect you from risky models.
+
+### T8. Corrupt `assets.json`
+If you edited `assets.json` and the backend fails to boot with `json.decoder.JSONDecodeError`:
+```bash
+# Validate your JSON
+python3 -m json.tool assets.json
+```
 
 ---
-
-
-
 # PART 5 — HERMES LLM AGENT
 
 ## 27. What Hermes Is and Why It Gets Better Over Time
@@ -1570,18 +1194,21 @@ Hermes is a local AI language model embedded directly in the trading terminal. I
 
 ---
 
-## 28. Installing Ollama + phi3:mini (3 Commands)
+## 28. Installing Ollama + phi3:mini
+
+> **Troubleshooting Ollama:**
+> - **Connection Refused:** Run `ollama serve` in a separate terminal.
+> - **Model Not Found:** Run `ollama pull phi3:mini`.
+ (3 Commands)
 
 Ollama is a free, open-source runtime that downloads and serves AI models locally. No accounts, no API keys, no cloud.
 
 **Step 1 — Install Ollama:**
 
-Linux / WSL2:
+Linux:
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ```
-
-macOS: download from [https://ollama.com/download](https://ollama.com/download) and install the `.dmg`.
 
 **Step 2 — Download the model:**
 ```bash
