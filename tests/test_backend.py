@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 
 # Adjust path to import from parent dir
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 from stock_market_backend import generate_signal, precision_backtest
 
 def test_generate_signal():

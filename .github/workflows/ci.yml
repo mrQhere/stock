@@ -69,7 +69,7 @@ jobs:
           QUANT_API_KEY: "ci-test-key-placeholder"
         run: |
           pytest tests/ -v --tb=short \
-            --cov=stock_market_backend \
+            --cov=src.stock_market_backend \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml
 
@@ -109,7 +109,7 @@ jobs:
         run: |
           python -c "
           import ast, sys, pathlib
-          files = list(pathlib.Path('.').glob('*.py'))
+          files = [f for f in pathlib.Path('.').rglob('*.py') if 'stock_env' not in f.parts and 'venv' not in f.parts]
           ok = True
           for f in files:
               try:

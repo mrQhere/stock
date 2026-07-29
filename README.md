@@ -219,7 +219,7 @@ For the full API reference including error codes and integration examples, see *
 
 ```bash
 source stock_env/bin/activate
-python hyperparameter_tuning.py
+python src/hyperparameter_tuning.py
 ```
 
 Results are written to `data_lake/hyperparams.json`. The backend hot-reloads this file at the start of every new cycle — no restart required.
