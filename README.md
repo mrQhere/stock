@@ -110,7 +110,7 @@ chmod +x stock_market_boot.sh
 ```
 
 The boot script will:
-1. Create `jarvis_env/` virtual environment
+1. Create `stock_env/` virtual environment
 2. Install PyTorch CPU wheels (avoids ~2 GB CUDA download)
 3. Install all pinned dependencies from `requirements.txt`
 4. Launch the backend shadow engine in the background
@@ -174,7 +174,7 @@ All `/api/v1/*` routes require the `X-API-Key` header:
 ```bash
 # Health check (no key required)
 curl http://localhost:8000/
-# → {"status": "online", "message": "JARVIS-V6 API Server"}
+# → {"status": "online", "message": "Stock Quant API Server"}
 
 # All current predictions
 curl -H "X-API-Key: $QUANT_API_KEY" http://localhost:8000/api/v1/predictions
@@ -218,7 +218,7 @@ For the full API reference including error codes and integration examples, see *
 **Prerequisites:** The backend must have completed at least one cycle so `data_lake/quant.db` contains `historical_data` rows.
 
 ```bash
-source jarvis_env/bin/activate
+source stock_env/bin/activate
 python hyperparameter_tuning.py
 ```
 

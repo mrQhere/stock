@@ -57,6 +57,18 @@
 33. [Anti-Overfitting Guards](#33-anti-overfitting-guards)
 34. [How the System Prevents Itself Getting Worse](#34-how-the-system-prevents-itself-getting-worse)
 
+### Developer Mode — For Contributors & Advanced Users
+- [D1. Activating the Development Environment](#d1-activating-the-development-environment)
+- [D2. Customising Signal Logic](#d2-customising-signal-logic-generate_signal)
+- [D3. Adding / Removing Tickers](#d3-adding--removing-tickers-assetsjson)
+- [D4. Changing the ML Model (XGBoost Hyperparameters)](#d4-changing-the-ml-model-xgboost-hyperparameters)
+- [D5. Switching the Hermes LLM Model](#d5-switching-the-hermes-llm-model)
+- [D6. Manual Database Queries](#d6-manual-database-queries)
+- [D7. Live Log Monitoring](#d7-live-log-monitoring)
+- [D8. Running the Test Suite](#d8-running-the-test-suite)
+- [D9. Architecture Principles](#d9-architecture-principles-before-you-change-anything)
+- [D10. Contributing](#d10-contributing)
+
 ---
 
 # PART 0 — QUICK START
@@ -112,7 +124,7 @@ APP_PASSWORD = "TCS-RELIANCE-quant99"
 
 # Good API key examples:
 export QUANT_API_KEY="sk-local-mQhere-2026-z9Kp"
-export QUANT_API_KEY="quant-jarvis-v6-prod-key"
+export QUANT_API_KEY="quant-stock-v1-prod-key"
 ```
 
 > [!NOTE]
@@ -354,7 +366,7 @@ chmod +x stock_market_boot.sh
 ```
 
 The script will:
-1. Create a Python virtual environment (`jarvis_env/`)
+1. Create a Python virtual environment (`stock_env/`)
 2. Install all dependencies (~5–20 minutes on first run)
 3. Launch the backend data engine in the background
 4. Show a progress bar while tickers are compiled
@@ -449,7 +461,7 @@ chmod +x stock_market_boot.sh
 
 The script will:
 1. Detect your OS and install missing system dependencies automatically
-2. Create a Python virtual environment at `jarvis_env/`
+2. Create a Python virtual environment at `stock_env/`
 3. Install PyTorch (CPU-only, ~500 MB — not the 3 GB CUDA version)
 4. Install all other pinned dependencies
 5. Launch the backend data engine in the background
@@ -505,7 +517,7 @@ echo $QUANT_API_KEY
 ```bash
 # Health check — no key needed
 curl http://localhost:8000/
-# → {"status": "online", "message": "JARVIS-V6 API Server"}
+# → {"status": "online", "message": "Stock Quant API Server"}
 
 # Authenticated request
 curl -H "X-API-Key: $QUANT_API_KEY" http://localhost:8000/api/v1/leaderboard
@@ -532,7 +544,7 @@ cd stock
 **Manual start (for debugging):**
 ```bash
 cd stock
-source jarvis_env/bin/activate
+source stock_env/bin/activate
 
 # Terminal 1: backend engine
 python stock_market_backend.py
@@ -1197,7 +1209,7 @@ The default XGBoost hyperparameters work reasonably for all assets. But each ass
 ### 24.2 Running the tuner
 
 ```bash
-source jarvis_env/bin/activate
+source stock_env/bin/activate
 python hyperparameter_tuning.py
 ```
 
@@ -1240,7 +1252,7 @@ The FastAPI server starts automatically with `./stock_market_boot.sh` and listen
 **`GET /`** — Health check
 ```bash
 curl http://localhost:8000/
-# {"status": "online", "message": "JARVIS-V6 API Server"}
+# {"status": "online", "message": "Stock Quant API Server"}
 ```
 
 **`GET /api/v1/leaderboard`** — Summary table of all tracked tickers
@@ -1342,7 +1354,7 @@ ps aux | grep stock_market_backend.py
 tail -50 logs/backend.log
 
 # Run it manually to see the exception in real-time
-source jarvis_env/bin/activate
+source stock_env/bin/activate
 python stock_market_backend.py
 ```
 
@@ -1351,7 +1363,7 @@ Common root causes:
 | Symptom in log | Fix |
 |---|---|
 | `json.JSONDecodeError` | Trailing comma in `assets.json` — validate with `python -m json.tool assets.json` |
-| `ModuleNotFoundError` | `pip install -r requirements.txt` inside `jarvis_env` |
+| `ModuleNotFoundError` | `pip install -r requirements.txt` inside `stock_env` |
 | `OMP: Error #15` (OpenMP clash between PyTorch + XGBoost) | Add `OMP_NUM_THREADS=1` before the backend `nohup` line in `stock_market_boot.sh` |
 | `torch` import hangs | CPU PyTorch not installed — run `pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu` |
 
@@ -1363,7 +1375,7 @@ The `predictions` table is empty — backend either hasn't finished the first cy
 
 ```bash
 # Quick DB health check
-source jarvis_env/bin/activate
+source stock_env/bin/activate
 python -c "
 import sqlite3
 conn = sqlite3.connect('data_lake/quant.db')
@@ -1485,7 +1497,7 @@ Two auto-demotion guards can cap BUY signals:
 
 Check which guard triggered:
 ```bash
-source jarvis_env/bin/activate
+source stock_env/bin/activate
 python -c "
 import sqlite3, json
 conn = sqlite3.connect('data_lake/quant.db')
@@ -1515,16 +1527,16 @@ Expected for: ETFs, indices, REITs, recently IPO'd companies (< 2 years of state
 
 ---
 
-### 26.12 Virtual environment / `jarvis_env` not found
+### 26.12 Virtual environment / `stock_env` not found
 
 ```bash
 # Recreate from scratch
-rm -rf jarvis_env
+rm -rf stock_env
 ./stock_market_boot.sh
 
 # Or manually:
-python3.12 -m venv jarvis_env
-source jarvis_env/bin/activate
+python3.12 -m venv stock_env
+source stock_env/bin/activate
 pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 ```
@@ -1536,7 +1548,7 @@ pip install -r requirements.txt
 The `ollama` Python client was added to `requirements.txt`. If you installed before this change, update the venv:
 
 ```bash
-source jarvis_env/bin/activate
+source stock_env/bin/activate
 pip install ollama httpx
 ```
 
@@ -1762,6 +1774,252 @@ Periodic: Run hyperparameter_tuning.py to retune XGBoost params
 - Walk-forward accuracy (today's real accuracy, not backtest)
 - Holdout R² and Train R² (model quality)
 - Overfit Score (≥ 0.4 = healthy)
+
+---
+
+---
+
+# DEVELOPER MODE
+
+> This section is for contributors and advanced users who want to modify the system internals. It assumes you are comfortable reading Python, editing source files, and running manual commands.
+
+---
+
+## D1. Activating the Development Environment
+
+```bash
+cd stock
+source stock_env/bin/activate
+
+# Run backend directly (foreground, full tracebacks visible)
+python stock_market_backend.py
+
+# Run UI separately with hot-reload
+streamlit run stock_market_ui.py --server.runOnSave true
+
+# Run API server
+uvicorn api_server:app --reload --port 8000
+```
+
+---
+
+## D2. Customising Signal Logic (`generate_signal`)
+
+Signal generation lives in `stock_market_backend.py` → `generate_signal()`. The full decision tree:
+
+```python
+# Thresholds you can tune:
+STRONG_BUY_PR   = 5.0    # Prediction return % for STRONG BUY
+BUY_PR          = 2.0    # Prediction return % for BUY
+SELL_PR         = -2.0   # Prediction return % for SELL
+STRONG_SELL_PR  = -4.0   # Prediction return % for STRONG SELL
+BEAR_SHARPE_CAP = -0.2   # In BEAR mode: if Sharpe < this → HOLD regardless
+MAX_DD_CAP      = -20.0  # Any mode: if MaxDD < this → cap BUY at HOLD
+```
+
+**Risk gates applied in order:**
+1. If `max_dd <= -20` → cap BUY-side to HOLD (catastrophic drawdown protection)
+2. If `market_mode == BEAR` and `sharpe < -0.2` → force HOLD
+3. If `overfitting_score < 0.4` (holdout R² / train R² too low) → force HOLD
+4. If `walk_30d_accuracy < 0.45` (recent signals wrong > 55% of time) → force HOLD
+5. Else → use `pr` + `sentiment` to pick signal tier
+
+To change a threshold, edit the constant and restart the backend. No restart of the UI or API server needed.
+
+---
+
+## D3. Adding / Removing Tickers (`assets.json`)
+
+Structure:
+```json
+{
+  "Category Name": {
+    "Subcategory": ["TICKER1.NS", "TICKER2.NS", "AAPL", "BTC-USD"]
+  }
+}
+```
+
+**Ticker format:**
+| Exchange | Suffix | Example |
+|---|---|---|
+| NSE India | `.NS` | `RELIANCE.NS` |
+| BSE India | `.BO` | `RELIANCE.BO` |
+| US Equities | none | `AAPL` |
+| Indices | `^` prefix | `^GSPC` |
+| Crypto | `-USD` | `BTC-USD` |
+| Forex | `=X` | `USDINR=X` |
+
+After editing `assets.json`, restart the backend. New tickers will be queued on the next cycle. No DB migration needed — `init_db()` uses `CREATE TABLE IF NOT EXISTS`.
+
+**Validate your JSON before restarting:**
+```bash
+python -m json.tool assets.json > /dev/null && echo "Valid JSON" || echo "Invalid JSON — fix before restart"
+```
+
+---
+
+## D4. Changing the ML Model (XGBoost Hyperparameters)
+
+**Option A — Manual edit** of `data_lake/hyperparams.json`:
+```json
+{
+  "RELIANCE.NS": {
+    "n_estimators": 1200,
+    "learning_rate": 0.03,
+    "max_depth": 6,
+    "subsample": 0.8,
+    "colsample_bytree": 0.7
+  }
+}
+```
+Changes are hot-reloaded at the start of each new backend cycle. No restart needed.
+
+**Option B — Run the Optuna tuner** for a full Bayesian search:
+```bash
+source stock_env/bin/activate
+python hyperparameter_tuning.py
+# Takes 10–60 minutes depending on ticker count
+# Results auto-saved to data_lake/hyperparams.json
+```
+
+**Option C — Reset to defaults** (let the backend train fresh):
+```bash
+rm data_lake/hyperparams.json
+# Backend falls back to built-in defaults on next cycle
+```
+
+---
+
+## D5. Switching the Hermes LLM Model
+
+Edit `llm_agent.py` line 1:
+```python
+DEFAULT_MODEL = "phi3:mini"   # change to any pulled Ollama model
+```
+
+Available models and RAM requirements:
+```bash
+ollama list    # see what's already downloaded
+
+# Pull alternatives:
+ollama pull gemma2:2b      # ~2 GB RAM, similar quality to phi3:mini
+ollama pull mistral:7b     # ~5 GB RAM, noticeably better reasoning
+ollama pull llama3.1:8b    # ~6 GB RAM, best quality for local use
+ollama pull qwen2.5:3b     # ~2.5 GB RAM, strong multilingual
+```
+
+---
+
+## D6. Manual Database Queries
+
+```bash
+source stock_env/bin/activate
+python -c "
+import sqlite3, json, pandas as pd
+
+conn = sqlite3.connect('data_lake/quant.db')
+
+# All tables
+print(conn.execute(\"SELECT name FROM sqlite_master WHERE type='table'\").fetchall())
+
+# Full prediction for one ticker
+row = conn.execute(\"SELECT JSON_Blob FROM predictions WHERE Ticker='RELIANCE.NS'\").fetchone()
+if row:
+    b = json.loads(row[0])
+    print('Signal:', b.get('Signal'))
+    print('Sharpe:', b.get('Sharpe'))
+    print('Overfit_Score:', b.get('Overfit_Score'))
+    print('Walk30_Accuracy:', b.get('Walk30_Accuracy'))
+
+# Walk-forward validation log
+df = pd.read_sql(\"SELECT * FROM backtest_validation WHERE Ticker='RELIANCE.NS' ORDER BY Date DESC LIMIT 10\", conn)
+print(df)
+conn.close()
+"
+```
+
+**Useful one-liners:**
+```bash
+# Count rows per table
+sqlite3 data_lake/quant.db ".tables"
+sqlite3 data_lake/quant.db "SELECT COUNT(*) FROM predictions;"
+sqlite3 data_lake/quant.db "SELECT Ticker, Signal FROM leaderboard ORDER BY Sharpe DESC LIMIT 10;"
+
+# Export leaderboard to CSV
+sqlite3 -csv -header data_lake/quant.db "SELECT * FROM leaderboard;" > leaderboard_export.csv
+```
+
+---
+
+## D7. Live Log Monitoring
+
+```bash
+# Backend ML engine
+tail -f logs/backend.log
+
+# API server
+tail -f logs/api.log
+
+# Hermes LLM per-ticker notes
+tail -f logs/hermes.log
+
+# Hermes daily review (signal outcomes + asset suggestions)
+tail -50 logs/hermes_review.log
+
+# Watch multiple at once (requires tmux or split terminal)
+tail -f logs/backend.log logs/api.log logs/hermes.log
+```
+
+---
+
+## D8. Running the Test Suite
+
+```bash
+source stock_env/bin/activate
+pip install pytest -q
+
+# Full test suite
+pytest tests/ -v
+
+# Single test
+pytest tests/test_backend.py::test_generate_signal -v
+
+# With coverage report
+pip install pytest-cov -q
+pytest tests/ --cov=stock_market_backend --cov-report=term-missing
+```
+
+---
+
+## D9. Architecture Principles (Before You Change Anything)
+
+| Principle | Why |
+|---|---|
+| **Backend writes, others only read** | The DB has WAL mode; UI and API query, backend inserts. Never have two writers. |
+| **Signal demotion is one-way** | Guards only demote BUY → HOLD, never promote. Adding a BUY-promotion path risks silent risk accumulation. |
+| **Every ticker gets a timeout** | `ThreadPoolExecutor` wraps `_process_ticker`. Never remove the timeout — one bad yfinance call can stall the entire cycle. |
+| **Hermes is always optional** | Any LLM call is wrapped in try/except. The system must function with Ollama offline. |
+| **No hardcoded CAGR or returns** | All projections use the ticker's own historical data. Generic assumptions (e.g. "12% p.a.") break at the asset level. |
+
+---
+
+## D10. Contributing
+
+1. Fork the repo on GitHub
+2. Create a feature branch: `git checkout -b feature/your-feature`
+3. Make changes, run tests: `pytest tests/ -v`
+4. Commit with a descriptive message: `git commit -m "feat: add walk-forward drawdown tracking"`
+5. Push and open a PR against `main`
+
+**Commit prefix conventions:**
+| Prefix | Use for |
+|---|---|
+| `feat:` | New feature |
+| `fix:` | Bug fix |
+| `docs:` | Documentation only |
+| `refactor:` | Code restructure, no behaviour change |
+| `test:` | Adding or fixing tests |
+| `perf:` | Performance improvement |
 
 ---
 

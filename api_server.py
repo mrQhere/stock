@@ -3,7 +3,7 @@ import sqlite3
 import json
 import os
 
-app = FastAPI(title="JARVIS-V6 Quant API", version="1.0")
+app = FastAPI(title="Stock Quant API", version="1.0")
 
 API_KEY = os.environ.get("QUANT_API_KEY")
 
@@ -25,7 +25,7 @@ def get_db():
 
 @app.get("/")
 def root():
-    return {"status": "online", "message": "JARVIS-V6 API Server"}
+    return {"status": "online", "message": "Stock Quant API Server"}
 
 @app.get("/api/v1/predictions", dependencies=[Depends(verify_key)])
 def get_all_predictions():

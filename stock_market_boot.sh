@@ -3,27 +3,53 @@
 BASE_DIR="$(pwd)"
 
 # ==========================================
+# STARTUP CHECKLIST
+# ==========================================
+echo -e ""
+echo -e "\033[0;36m╔══════════════════════════════════════════════════════════╗\033[0m"
+echo -e "\033[0;36m║       Stock Market Predictor — Boot Checklist            ║\033[0m"
+echo -e "\033[0;36m╚══════════════════════════════════════════════════════════╝\033[0m"
+echo -e ""
+echo -e "\033[0;37mServices that will start:\033[0m"
+echo -e "  \033[0;32m[1]\033[0m Backend engine    — ML training, data sync, signal gen"
+echo -e "  \033[0;32m[2]\033[0m FastAPI server     — REST API on http://localhost:8000"
+echo -e "  \033[0;32m[3]\033[0m Streamlit UI       — Dashboard on http://localhost:8501"
+echo -e ""
+echo -e "\033[0;37mFiles that will be created (if first run):\033[0m"
+echo -e "  \033[0;33m[•]\033[0m stock_env/         — Python virtual environment"
+echo -e "  \033[0;33m[•]\033[0m data_lake/quant.db — SQLite database (WAL mode)"
+echo -e "  \033[0;33m[•]\033[0m logs/backend.log   — Backend stdout/stderr"
+echo -e "  \033[0;33m[•]\033[0m logs/api.log       — FastAPI stdout/stderr"
+echo -e ""
+echo -e "\033[0;37mOptional (Hermes LLM — auto-detected):\033[0m"
+if curl -s http://localhost:11434/ > /dev/null 2>&1; then
+    echo -e "  \033[0;32m[✓]\033[0m Ollama is running — Hermes AI analysis ENABLED"
+else
+    echo -e "  \033[0;33m[✗]\033[0m Ollama not detected — Hermes AI analysis DISABLED (run: ollama serve)"
+fi
+echo -e ""
+
+# ==========================================
 # PHASE 0: ZERO-FRICTION SETUP
 # ==========================================
-echo -e "\033[0;36mInitializing Zero-Friction Setup...\033[0m"
+echo -e "\033[0;36m[Phase 0] Checking system dependencies...\033[0m"
 
-# Install system dependencies if missing
 check_and_install_sys_deps() {
     local missing=0
     for cmd in python3 pip; do
         if ! command -v $cmd &> /dev/null; then
-            echo -e "\033[0;33m$cmd is missing.\033[0m"
+            echo -e "\033[0;33m  $cmd is missing.\033[0m"
             missing=1
         fi
     done
-    
+
     if ! python3 -m venv --help &> /dev/null; then
-        echo -e "\033[0;33mpython3-venv is missing.\033[0m"
+        echo -e "\033[0;33m  python3-venv is missing.\033[0m"
         missing=1
     fi
 
     if [ $missing -eq 1 ]; then
-        echo -e "\033[0;33mAttempting to install missing system dependencies...\033[0m"
+        echo -e "\033[0;33m  Attempting to install missing system dependencies...\033[0m"
         if command -v apt-get &> /dev/null; then
             sudo apt-get update && sudo apt-get install -y python3 python3-pip python3-venv build-essential
         elif command -v yum &> /dev/null; then
@@ -31,105 +57,108 @@ check_and_install_sys_deps() {
         elif command -v pacman &> /dev/null; then
             sudo pacman -Sy --noconfirm python python-pip base-devel
         else
-            echo -e "\033[0;31mCould not detect package manager. Please install python3, pip, and python3-venv manually.\033[0m"
+            echo -e "\033[0;31m  Could not detect package manager. Install python3, pip, and python3-venv manually.\033[0m"
             exit 1
         fi
+    else
+        echo -e "\033[0;32m  System dependencies OK\033[0m"
     fi
 }
 
 check_and_install_sys_deps
 
-if [ ! -d "$BASE_DIR/jarvis_env" ]; then
-    echo -e "\033[0;33mVirtual Environment missing. Creating one now...\033[0m"
-    python3 -m venv "$BASE_DIR/jarvis_env"
-    
-    echo -e "\033[0;33mInstalling AI & UI dependencies (this may take a minute)...\033[0m"
-    source "$BASE_DIR/jarvis_env/bin/activate"
-    pip install --upgrade pip
-    
-    echo -e "\033[0;36mInstalling PyTorch CPU wheels to save bandwidth and space...\033[0m"
-    pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu
-    
+if [ ! -d "$BASE_DIR/stock_env" ]; then
+    echo -e "\033[0;33m[Phase 0] Virtual environment missing — creating stock_env...\033[0m"
+    python3 -m venv "$BASE_DIR/stock_env"
+
+    echo -e "\033[0;33m[Phase 0] Installing dependencies (first run — ~10 minutes)...\033[0m"
+    source "$BASE_DIR/stock_env/bin/activate"
+    pip install --upgrade pip -q
+
+    echo -e "\033[0;36m  Installing PyTorch CPU wheels (skips 2 GB CUDA download)...\033[0m"
+    pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu -q
+
     req_file="$BASE_DIR/requirements.txt"
-    echo -e "\033[0;36mInstalling from $req_file...\033[0m"
-    if pip install -r "$req_file"; then
-        echo -e "\033[0;32mRequirements installed successfully.\033[0m"
+    echo -e "\033[0;36m  Installing from requirements.txt...\033[0m"
+    if pip install -r "$req_file" -q; then
+        echo -e "\033[0;32m  Dependencies installed.\033[0m"
     else
-        echo -e "\033[0;33mPrimary installation failed. Attempting redundancy methods...\033[0m"
-        # Redundancy 1: No cache
-        if pip install -r "$req_file" --no-cache-dir; then
-            echo -e "\033[0;32mRequirements installed successfully using --no-cache-dir.\033[0m"
-        # Redundancy 2: Prefer binary
-        elif pip install -r "$req_file" --prefer-binary; then
-            echo -e "\033[0;32mRequirements installed successfully using --prefer-binary.\033[0m"
-        # Redundancy 3: Try different mirror
-        elif pip install -r "$req_file" -i https://pypi.python.org/simple/; then
-            echo -e "\033[0;32mRequirements installed successfully using alternate mirror.\033[0m"
+        echo -e "\033[0;33m  Primary install failed. Retrying with fallback flags...\033[0m"
+        if pip install -r "$req_file" --no-cache-dir -q; then
+            echo -e "\033[0;32m  Installed (--no-cache-dir).\033[0m"
+        elif pip install -r "$req_file" --prefer-binary -q; then
+            echo -e "\033[0;32m  Installed (--prefer-binary).\033[0m"
+        elif pip install -r "$req_file" -i https://pypi.python.org/simple/ -q; then
+            echo -e "\033[0;32m  Installed (alternate mirror).\033[0m"
         else
-            echo -e "\033[0;31mCRITICAL ERROR: Failed to install requirements after all redundancy attempts. The application might be unstable.\033[0m"
+            echo -e "\033[0;31m  CRITICAL: Failed to install requirements. Check your internet connection.\033[0m"
         fi
     fi
-    
+
     deactivate
-    echo -e "\033[0;32mEnvironment setup complete!\033[0m"
+    echo -e "\033[0;32m[Phase 0] Environment ready: stock_env/\033[0m"
+else
+    echo -e "\033[0;32m[Phase 0] stock_env/ exists — skipping install\033[0m"
 fi
 
 if [ ! -f "$BASE_DIR/assets.json" ]; then
-    echo "oooi you dont need money news huhhh??"
+    echo -e "\033[0;31m[ERROR] assets.json not found. Cannot determine tickers.\033[0m"
+    exit 1
 fi
 
 # ==========================================
 # PHASE 1: BACKEND IGNITION
 # ==========================================
-# Kill previous instances
-pkill -f stock_market_backend.py
-pkill -f stock_market_ui.py
-pkill -f uvicorn
+echo -e ""
+echo -e "\033[0;36m[Phase 1] Stopping any previous instances...\033[0m"
+pkill -f stock_market_backend.py 2>/dev/null
+pkill -f stock_market_ui.py 2>/dev/null
+pkill -f uvicorn 2>/dev/null
 
 # Remove old ready flag to force UI to wait for fresh data
 rm -f "$BASE_DIR/data_lake/.ready"
 
-# Create logs directory
+# Create logs and data_lake directories
 mkdir -p "$BASE_DIR/logs"
+mkdir -p "$BASE_DIR/data_lake"
 
-echo -e "\033[0;35mIgniting services...\033[0m"
-echo -e "\033[0;35m  \u2192 Backend:    data sync & ML predictions  \u2192  logs/backend.log\033[0m"
-echo -e "\033[0;35m  \u2192 API Server: FastAPI on http://localhost:8000  \u2192  logs/api.log\033[0m"
-echo -e "\033[0;35m  \u2192 UI:         Streamlit on http://localhost:8501  (starts after data sync)\033[0m"
-PYTHONUNBUFFERED=1 nohup "$BASE_DIR/jarvis_env/bin/python" "$BASE_DIR/stock_market_backend.py" > "$BASE_DIR/logs/backend.log" 2>&1 &
-nohup "$BASE_DIR/jarvis_env/bin/uvicorn" api_server:app --host 0.0.0.0 --port 8000 > "$BASE_DIR/logs/api.log" 2>&1 &
+echo -e "\033[0;36m[Phase 1] Starting services...\033[0m"
+echo -e "  \033[0;35m→ Backend:    logs/backend.log\033[0m"
+echo -e "  \033[0;35m→ API Server: http://localhost:8000  →  logs/api.log\033[0m"
+echo -e "  \033[0;35m→ UI:         http://localhost:8501  (after data sync)\033[0m"
+
+PYTHONUNBUFFERED=1 nohup "$BASE_DIR/stock_env/bin/python" "$BASE_DIR/stock_market_backend.py" > "$BASE_DIR/logs/backend.log" 2>&1 &
+nohup "$BASE_DIR/stock_env/bin/uvicorn" api_server:app --host 0.0.0.0 --port 8000 > "$BASE_DIR/logs/api.log" 2>&1 &
 
 sleep 2
 if ! pgrep -f stock_market_backend.py > /dev/null; then
-    echo -e "\033[0;31mERROR: Backend failed to ignite. Check logs/backend.log for details.\033[0m"
-    cat "$BASE_DIR/logs/backend.log"
+    echo -e "\033[0;31m[ERROR] Backend failed to start. Last 20 lines of logs/backend.log:\033[0m"
+    tail -20 "$BASE_DIR/logs/backend.log"
     exit 1
 fi
-
+echo -e "\033[0;32m[Phase 1] Backend running ✓\033[0m"
 
 # ==========================================
 # PHASE 2: DATA SYNCHRONIZATION
 # ==========================================
-# Wait for the full first cycle to complete before launching the UI.
-# The .ready file is written by the backend after ALL tickers in assets.json
-# have been processed for the first time, giving the user a complete dataset
-# from the moment the dashboard opens.
-echo -e "\033[0;36mCompiling initial data for all tickers. This takes a few minutes on first run...\033[0m"
+echo -e ""
+echo -e "\033[0;36m[Phase 2] Waiting for all tickers to complete first cycle...\033[0m"
 
 DB_FILE="$BASE_DIR/data_lake/quant.db"
 
-TOTAL_TICKERS=$("$BASE_DIR/jarvis_env/bin/python" -c "import json; d=json.load(open('$BASE_DIR/assets.json')); print(sum(len(v) for cat in d.values() for v in cat.values()))" 2>/dev/null)
+TOTAL_TICKERS=$("$BASE_DIR/stock_env/bin/python" -c "import json; d=json.load(open('$BASE_DIR/assets.json')); print(sum(len(v) for cat in d.values() for v in cat.values()))" 2>/dev/null)
 if [ -z "$TOTAL_TICKERS" ] || [ "$TOTAL_TICKERS" -eq 0 ]; then TOTAL_TICKERS=30; fi
 
 START_TIME=$(date +%s)
 
 while [ ! -f "$BASE_DIR/data_lake/.ready" ]; do
     if ! pgrep -f stock_market_backend.py > /dev/null; then
-        echo -e "\n\033[0;31mCRITICAL: Backend process died during sync. Check logs/backend.log.\033[0m"
+        echo -e "\n\033[0;31m[CRITICAL] Backend died during sync. Check logs/backend.log:\033[0m"
+        tail -20 "$BASE_DIR/logs/backend.log"
         exit 1
     fi
 
-    PROCESSED=$("$BASE_DIR/jarvis_env/bin/python" -c "
+    PROCESSED=$("$BASE_DIR/stock_env/bin/python" -c "
 import sqlite3
 try:
     conn = sqlite3.connect('$DB_FILE')
@@ -171,30 +200,33 @@ except Exception:
     for ((i=0; i<DOTS_LEFT; i++)); do BAR="${BAR}."; done
     BAR="${BAR}]"
 
-    echo -ne "\r\033[0;33mCompiling: ${BAR} ${PCT}% | Tickers: ${PROCESSED}/${TOTAL_TICKERS} | Est. Remaining: ${EST_MSG}  \033[0m"
+    echo -ne "\r\033[0;33m  Compiling: ${BAR} ${PCT}% | ${PROCESSED}/${TOTAL_TICKERS} tickers | ETA: ${EST_MSG}  \033[0m"
     sleep 2
 done
 
-echo -e "\n\033[0;32mAll tickers compiled! Launching dashboard...\033[0m"
+echo -e "\n\033[0;32m[Phase 2] All tickers compiled ✓\033[0m"
 
 # ==========================================
-# PHASE 3: THE VISION DEPLOYMENT
+# PHASE 3: MODE SELECTION & UI LAUNCH
 # ==========================================
 clear
 
-echo -e "\033[0;36mStock Market Predictor System Initializing...\033[0m"
-
-# Mode selection — controls which panels the UI renders.
-# The backend always computes all data; mode is UI-only.
-echo ""
-echo "Select mode:"
-echo "  1) Simple Long-Term Investor   (fundamentals, Piotroski, SIP calculator)"
-echo "  2) Advanced Trader             (all panels + signal, Monte Carlo, backtest)"
+echo -e "\033[0;36m╔══════════════════════════════════════════════════════════╗\033[0m"
+echo -e "\033[0;36m║       Stock Market Predictor — Ready                     ║\033[0m"
+echo -e "\033[0;36m╚══════════════════════════════════════════════════════════╝\033[0m"
+echo -e ""
+echo -e "\033[0;32m  ✓ Backend running    (logs/backend.log)\033[0m"
+echo -e "\033[0;32m  ✓ API server running (http://localhost:8000)\033[0m"
+echo -e "\033[0;32m  ✓ Data sync complete ($TOTAL_TICKERS tickers)\033[0m"
+echo -e ""
+echo -e "Select mode:"
+echo -e "  \033[0;33m1)\033[0m Investor Mode   — fundamentals, Piotroski, SIP calculator"
+echo -e "  \033[0;33m2)\033[0m Advanced Mode   — signals, Monte Carlo, backtest, Hermes AI"
 read -p "> " MODE_CHOICE
 export APP_MODE=$([ "$MODE_CHOICE" == "2" ] && echo "advanced" || echo "investor")
-echo -e "\033[0;32mStarting in ${APP_MODE} mode.\033[0m"
+echo -e "\033[0;32mLaunching in ${APP_MODE} mode → http://localhost:8501\033[0m"
 
-TOTAL_TICKERS=$("$BASE_DIR/jarvis_env/bin/python" -c "import json; d=json.load(open('$BASE_DIR/assets.json')); print(sum(len(v) for cat in d.values() for v in cat.values()))" 2>/dev/null)
+TOTAL_TICKERS=$("$BASE_DIR/stock_env/bin/python" -c "import json; d=json.load(open('$BASE_DIR/assets.json')); print(sum(len(v) for cat in d.values() for v in cat.values()))" 2>/dev/null)
 export TOTAL_TICKERS
 
-"$BASE_DIR/jarvis_env/bin/streamlit" run "$BASE_DIR/stock_market_ui.py"
+"$BASE_DIR/stock_env/bin/streamlit" run "$BASE_DIR/stock_market_ui.py"
