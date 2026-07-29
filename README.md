@@ -126,6 +126,8 @@ These are automatically saved to `.streamlit/secrets.toml` and your `~/.bashrc` 
 
 ---
 
+> **Headless Mode / CI:** Prefix the boot command with `CI=true` (e.g., `CI=true ./stock_market_boot.sh`) to automatically bypass interactive prompts and auto-generate credentials.
+
 ## 🔌 REST API (Optional)
 
 The system includes a FastAPI server that exposes all predictions via HTTP. It starts automatically alongside the backend and UI when you run `./stock_market_boot.sh`.

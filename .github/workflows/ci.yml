@@ -102,9 +102,27 @@ jobs:
           print('All core imports OK')
           "
 
-      - name: Check boot script is executable / valid bash
-        run: bash -n stock_market_boot.sh && echo "stock_market_boot.sh syntax OK"
-
+      - name: Test boot script non-interactive execution
+        env:
+          CI: "true"
+        run: |
+          # Start the boot script in the background
+          ./stock_market_boot.sh &
+          BOOT_PID=$!
+          
+          # Wait a few seconds to let Phase 0 and 0.5 run
+          sleep 15
+          
+          # Check if the process is still running (it shouldn't have crashed)
+          if ps -p $BOOT_PID > /dev/null; then
+            echo "Boot script successfully started non-interactively!"
+            kill $BOOT_PID
+            pkill -f stock_market_backend || true
+            pkill -f uvicorn || true
+          else
+            echo "Boot script crashed!"
+            exit 1
+          fi
       - name: Check Python syntax on all source files
         run: |
           python -c "

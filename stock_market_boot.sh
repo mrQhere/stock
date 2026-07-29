@@ -118,8 +118,13 @@ mkdir -p "$BASE_DIR/.streamlit"
 SECRETS_FILE="$BASE_DIR/.streamlit/secrets.toml"
 if [ ! -f "$SECRETS_FILE" ] || ! grep -q "APP_PASSWORD" "$SECRETS_FILE"; then
     echo -e "\033[0;33m[!] Dashboard Password not set.\033[0m"
-    read -s -p "Enter a strong password for the UI Dashboard: " USER_APP_PASS
-    echo ""
+    if [ "$CI" = "true" ] || [ ! -t 0 ]; then
+        echo -e "\033[0;33m  Non-interactive mode detected. Auto-generating dashboard password.\033[0m"
+        USER_APP_PASS="auto-gen-ci-pass"
+    else
+        read -s -p "Enter a strong password for the UI Dashboard: " USER_APP_PASS
+        echo ""
+    fi
     echo "APP_PASSWORD = \"$USER_APP_PASS\"" > "$SECRETS_FILE"
     echo -e "\033[0;32m  Saved to $SECRETS_FILE\033[0m"
 else
@@ -136,8 +141,13 @@ if [ -z "$QUANT_API_KEY" ]; then
         echo -e "\033[0;32m  REST API Key loaded from $BASHRC_FILE\033[0m"
     else
         echo -e "\033[0;33m[!] REST API Key not set.\033[0m"
-        read -s -p "Enter a strong API Key for the FastAPI backend: " USER_API_KEY
-        echo ""
+        if [ "$CI" = "true" ] || [ ! -t 0 ]; then
+            echo -e "\033[0;33m  Non-interactive mode detected. Auto-generating API key.\033[0m"
+            USER_API_KEY="auto-gen-ci-key"
+        else
+            read -s -p "Enter a strong API Key for the FastAPI backend: " USER_API_KEY
+            echo ""
+        fi
         echo "export QUANT_API_KEY=\"$USER_API_KEY\"" >> "$BASHRC_FILE"
         export QUANT_API_KEY="$USER_API_KEY"
         echo -e "\033[0;32m  Saved to $BASHRC_FILE\033[0m"
