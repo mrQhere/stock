@@ -11,27 +11,27 @@
 ### Part 1: First Setup & Quick Start
 1. [Prerequisites](#01-prerequisites)
 2. [Clone and Configure](#02-clone-and-configure)
-3. [Install Ollama (Optional)](#03-install-ollama-optional--enables-hermes-ai-analysis)
+3. [Install Ollama (Optional)](#03-install-ollama-optional-enables-hermes-ai-analysis)
 4. [Launch](#04-launch)
 
 ### Part 2: Beginner Operations
-5. [What This Tool Does](#1-what-this-tool-does)
-6. [Choosing a Mode](#6-choosing-a-mode)
-7. [Reading the Dashboard — Investor Mode](#7-reading-the-dashboard--investor-mode)
+[What This Tool Does](#1-what-this-tool-does)
+[Choosing a Mode](#6-choosing-a-mode)
+[Reading the Dashboard — Investor Mode](#7-reading-the-dashboard-investor-mode)
 
 ### Part 3: Advanced Operations
-8. [Reading the Dashboard — Advanced Mode](#8-reading-the-dashboard--advanced-mode)
-9. [Customising assets.json](#23-customising-assetsjson)
-10. [Hermes LLM Agent](#part-5--hermes-llm-agent)
+[Reading the Dashboard — Advanced Mode](#8-reading-the-dashboard-advanced-mode)
+[Customising assets.json](#23-customising-assetsjson)
+[Hermes LLM Agent](#part-5-hermes-llm-agent)
 
 ### Part 4: Expert Operations
-11. [Developer Mode (D1-D10)](#developer-mode--for-contributors--advanced-users)
-12. [System Architecture](#part-2--system-architecture)
-13. [Mathematical Core Theory](#part-3--mathematical-theorems-the-core)
-14. [REST API Reference](#25-rest-api-reference)
+[Developer Mode (D1-D10)](#developer-mode-for-contributors-advanced-users)
+[System Architecture](#part-2-system-architecture)
+[Mathematical Core Theory](#part-3-mathematical-theorems)
+[REST API Reference](#25-rest-api-reference)
 
 ### Part 5: Troubleshooting & Reset
-15. [Comprehensive Reset Guide](#26-troubleshooting--complete-reset)
+[Comprehensive Reset Guide](#26-troubleshooting-complete-reset)
 
 ---
 
@@ -141,149 +141,6 @@ This is a **locally-hosted quantitative research terminal**. It downloads 5 year
 | Storage | 3 GB free | 10 GB free |
 | Internet | Required for data fetch | Broadband |
 | GPU | Not needed | Not needed (CPU-only PyTorch) |
-
----
-
-## 3. First-Time Installation (Copy-Paste)
-
-Open a terminal and run these commands **one block at a time**:
-
-**Step 1 — Clone the repository**
-```bash
-git clone https://github.com/mrQhere/stock.git
-cd stock
-```
-
-**Step 2 — Create your password file**
-```bash
-mkdir -p .streamlit
-cat > .streamlit/secrets.toml << 'EOF'
-APP_PASSWORD = "change_this_to_your_password"
-EOF
-```
-
-**Step 3 — Set your API key** (required to use the REST API)
-```bash
-# Add this to your ~/.bashrc or ~/.zshrc so it persists across sessions
-echo 'export QUANT_API_KEY="change_this_to_your_api_key"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-**Step 4 — Make the boot script executable and run it**
-```bash
-chmod +x stock_market_boot.sh
-./stock_market_boot.sh
-```
-
-The script will:
-1. Detect your OS and install missing system dependencies automatically
-2. Create a Python virtual environment at `stock_env/`
-3. Install PyTorch (CPU-only, ~500 MB — not the 3 GB CUDA version)
-4. Install all other pinned dependencies
-5. Launch the backend data engine in the background
-6. Show a progress bar while all tickers compile
-7. Ask you to select Investor or Advanced mode
-8. Open the Streamlit dashboard in your browser
-
-> **First run takes 5–20 minutes** depending on internet speed and number of tickers. After the first run, subsequent boots are much faster because data is cached in `data_lake/quant.db`.
-
----
-
-## 4. Setting Your Password and API Key
-
-### UI Password (`APP_PASSWORD`)
-
-The dashboard locks behind a password set in `.streamlit/secrets.toml`. This file is in `.gitignore` and is never committed.
-
-```bash
-mkdir -p .streamlit
-nano .streamlit/secrets.toml   # or use any text editor
-```
-
-Contents of the file (just this one line):
-```toml
-APP_PASSWORD = "mQ-alpha-2026-Xr7q"
-```
-
-If the file is missing, the dashboard opens without any password prompt.
-
----
-
-### REST API Key (`QUANT_API_KEY`)
-
-The FastAPI server reads this from the **environment only** — not from `secrets.toml`. Set it before running the boot script:
-
-```bash
-export QUANT_API_KEY="sk-local-mQhere-z9Kp-2026"
-```
-
-Make it persist across reboots:
-```bash
-echo 'export QUANT_API_KEY="sk-local-mQhere-z9Kp-2026"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-**Verify it is set:**
-```bash
-echo $QUANT_API_KEY
-# Expected: sk-local-mQhere-z9Kp-2026
-```
-
-**Test it against the running server:**
-```bash
-# Health check — no key needed
-curl http://localhost:8000/
-# → {"status": "online", "message": "Stock Quant API Server"}
-
-# Authenticated request
-curl -H "X-API-Key: $QUANT_API_KEY" http://localhost:8000/api/v1/leaderboard
-
-# Wrong key → 401
-curl -H "X-API-Key: wrongkey" http://localhost:8000/api/v1/leaderboard
-# → {"detail": "Invalid or missing API key."}
-```
-
-> [!NOTE]
-> These keys are invented by you — they are not registered with any external service. The value can be any string. Use something with mixed case, numbers, and a hyphen so it is hard to brute-force if your port is ever exposed.
-
----
-
-
-## 5. Starting the System
-
-**Normal start (after first run):**
-```bash
-cd stock
-./stock_market_boot.sh
-```
-
-**Manual start (for debugging):**
-```bash
-cd stock
-source stock_env/bin/activate
-
-# Terminal 1: backend engine
-python src/stock_market_backend.py
-
-# Terminal 2: REST API
-uvicorn src.api_server:app --host 0.0.0.0 --port 8000
-
-# Terminal 3: dashboard
-streamlit run src/stock_market_ui.py
-```
-
-**Check if backend is running:**
-```bash
-ps aux | grep stock_market_backend.py
-tail -f logs/backend.log
-```
-
-**Stop everything:**
-```bash
-pkill -f stock_market_backend.py
-pkill -f stock_market_ui.py
-pkill -f uvicorn
-```
 
 ---
 
@@ -462,7 +319,9 @@ All indicators are computed from raw OHLCV data inside `fetch_and_store()`. No e
 
 ### 13.1 Simple Moving Average (SMA)
 
-$$\text{SMA}_n(t) = \frac{1}{n} \sum_{i=0}^{n-1} \text{Close}_{t-i}$$
+```math
+\text{SMA}_n(t) = \frac{1}{n} \sum_{i=0}^{n-1} \text{Close}_{t-i}
+```
 
 The SMA smooths price noise. We compute SMA-20, SMA-50, and SMA-200. A "Golden Cross" is when SMA-50 crosses above SMA-200 — a historically bullish regime signal. A "Death Cross" is the reverse.
 
@@ -472,19 +331,25 @@ raw['SMA_20'] = raw['Close'].rolling(20).mean()
 
 ### 13.2 Exponential Moving Average (EMA)
 
-$$\text{EMA}_t = \text{Close}_t \cdot \alpha + \text{EMA}_{t-1} \cdot (1 - \alpha), \quad \alpha = \frac{2}{n+1}$$
+```math
+\text{EMA}_t = \text{Close}_t \cdot \alpha + \text{EMA}_{t-1} \cdot (1 - \alpha), \quad \alpha = \frac{2}{n+1}
+```
 
 EMA weights recent prices more heavily than SMA. We compute EMA-12 and EMA-26.
 
 ### 13.3 MACD (Moving Average Convergence Divergence)
 
-$$\text{MACD}_t = \text{EMA}_{12}(t) - \text{EMA}_{26}(t)$$
+```math
+\text{MACD}_t = \text{EMA}_{12}(t) - \text{EMA}_{26}(t)
+```
 
 MACD measures momentum. When MACD crosses zero from below, it signals a potential upward momentum shift. It is one of the 12 features fed into both the XGBoost and LSTM models.
 
 ### 13.4 RSI (Relative Strength Index)
 
-$$\text{RSI} = 100 - \frac{100}{1 + RS}, \quad RS = \frac{\overline{\text{Gain}_{14}}}{\overline{\text{Loss}_{14}}}$$
+```math
+\text{RSI} = 100 - \frac{100}{1 + RS}, \quad RS = \frac{\overline{\text{Gain}_{14}}}{\overline{\text{Loss}_{14}}}
+```
 
 Where the gain/loss averages are computed over a 14-day rolling window. RSI oscillates between 0 and 100. Above 70 signals potential overbought conditions; below 30 signals potential oversold.
 
@@ -498,7 +363,9 @@ raw['RSI'] = 100 - (100 / (1 + rs))
 
 ### 13.5 Bollinger Bands
 
-$$\text{Upper} = \text{SMA}_{20} + 2\sigma_{20}, \quad \text{Lower} = \text{SMA}_{20} - 2\sigma_{20}$$
+```math
+\text{Upper} = \text{SMA}_{20} + 2\sigma_{20}, \quad \text{Lower} = \text{SMA}_{20} - 2\sigma_{20}
+```
 
 Where $\sigma_{20}$ is the 20-day rolling standard deviation of Close.
 
@@ -508,17 +375,25 @@ Where $\sigma_{20}$ is the 20-day rolling standard deviation of Close.
 
 ### 13.6 ATR (Average True Range)
 
-$$\text{TR}_t = \max(\text{High}_t - \text{Low}_t,\ |\text{High}_t - \text{Close}_{t-1}|,\ |\text{Low}_t - \text{Close}_{t-1}|)$$
+```math
+\text{TR}_t = \max(\text{High}_t - \text{Low}_t,\ |\text{High}_t - \text{Close}_{t-1}|,\ |\text{Low}_t - \text{Close}_{t-1}|)
+```
 
-$$\text{ATR}_{14} = \frac{1}{14} \sum_{i=0}^{13} \text{TR}_{t-i}$$
+```math
+\text{ATR}_{14} = \frac{1}{14} \sum_{i=0}^{13} \text{TR}_{t-i}
+```
 
 ATR measures volatility in price terms (rupees/dollars), not percentage. A high ATR means large day-to-day price swings — higher risk per trade.
 
 ### 13.7 Stochastic Oscillator
 
-$$K_t = 100 \cdot \frac{\text{Close}_t - \text{Low}_{14}}{\text{High}_{14} - \text{Low}_{14}}$$
+```math
+K_t = 100 \cdot \frac{\text{Close}_t - \text{Low}_{14}}{\text{High}_{14} - \text{Low}_{14}}
+```
 
-$$D_t = \text{SMA}_3(K)$$
+```math
+D_t = \text{SMA}_3(K)
+```
 
 Where $\text{Low}_{14}$ and $\text{High}_{14}$ are the 14-day rolling minimum and maximum. Stoch-K oscillates 0–100. Above 80 = overbought zone; below 20 = oversold zone.
 
@@ -530,7 +405,9 @@ Where $\text{Low}_{14}$ and $\text{High}_{14}$ are the 14-day rolling minimum an
 
 We frame price forecasting as a regression problem. The target $y_t$ is the **next day's return**:
 
-$$y_t = \frac{\text{Close}_{t+1} - \text{Close}_t}{\text{Close}_t}$$
+```math
+y_t = \frac{\text{Close}_{t+1} - \text{Close}_t}{\text{Close}_t}
+```
 
 The 12 features $\mathbf{x}_t$ are: `Close, SMA_20, SMA_50, SMA_200, MACD, RSI, Volatility_20, BB_Width, BB_PB, ATR_14, Stoch_K, Stoch_D`.
 
@@ -538,11 +415,15 @@ The 12 features $\mathbf{x}_t$ are: `Close, SMA_20, SMA_50, SMA_200, MACD, RSI, 
 
 XGBoost builds an additive ensemble of $T$ shallow decision trees $f_1, f_2, \ldots, f_T$:
 
-$$\hat{y}_t = \sum_{k=1}^{T} f_k(\mathbf{x}_t)$$
+```math
+\hat{y}_t = \sum_{k=1}^{T} f_k(\mathbf{x}_t)
+```
 
 Each tree $f_k$ is trained to predict the **residual error** of the previous ensemble. Formally, at step $k$ we minimise:
 
-$$\mathcal{L}^{(k)} = \sum_{i} l\left(y_i,\ \hat{y}_i^{(k-1)} + f_k(\mathbf{x}_i)\right) + \Omega(f_k)$$
+```math
+\mathcal{L}^{(k)} = \sum_{i} l\left(y_i,\ \hat{y}_i^{(k-1)} + f_k(\mathbf{x}_i)\right) + \Omega(f_k)
+```
 
 Where $l$ is squared error for regression and $\Omega(f_k) = \gamma T_k + \frac{1}{2}\lambda \|w\|^2$ is a regularisation term penalising tree complexity ($T_k$ = number of leaves, $w$ = leaf weights).
 
@@ -550,7 +431,9 @@ Where $l$ is squared error for regression and $\Omega(f_k) = \gamma T_k + \frac{
 
 XGBoost speeds up the optimisation by approximating the loss with its second-order Taylor expansion:
 
-$$\mathcal{L}^{(k)} \approx \sum_i \left[ g_i f_k(\mathbf{x}_i) + \frac{1}{2} h_i f_k(\mathbf{x}_i)^2 \right] + \Omega(f_k)$$
+```math
+\mathcal{L}^{(k)} \approx \sum_i \left[ g_i f_k(\mathbf{x}_i) + \frac{1}{2} h_i f_k(\mathbf{x}_i)^2 \right] + \Omega(f_k)
+```
 
 Where $g_i = \partial_{\hat{y}} l(y_i, \hat{y}_i)$ (first derivative) and $h_i = \partial^2_{\hat{y}} l(y_i, \hat{y}_i)$ (second derivative, the Hessian). For squared error: $g_i = \hat{y}_i - y_i$, $h_i = 1$.
 
@@ -568,7 +451,9 @@ Key hyperparameters tuned by Optuna:
 
 The backend deliberately reserves the most recent 20% of data (minimum 60 days) as a holdout set. The XGBoost model is **never trained on this data**. The `Compat` (compatibility) metric shown in the UI is the $R^2$ score on this unseen holdout:
 
-$$R^2 = 1 - \frac{\sum_i (y_i - \hat{y}_i)^2}{\sum_i (y_i - \bar{y})^2}$$
+```math
+R^2 = 1 - \frac{\sum_i (y_i - \hat{y}_i)^2}{\sum_i (y_i - \bar{y})^2}
+```
 
 An $R^2$ near 0 means the model predicts no better than the mean. An $R^2$ of 0.15–0.25 is considered strong for daily return prediction; markets are nearly random at this timescale.
 
@@ -584,12 +469,24 @@ XGBoost treats each day as an independent observation. The LSTM (Long Short-Term
 
 At each time step $t$, the LSTM computes:
 
-$$f_t = \sigma(W_f \cdot [h_{t-1}, x_t] + b_f) \quad \text{(forget gate)}$$
-$$i_t = \sigma(W_i \cdot [h_{t-1}, x_t] + b_i) \quad \text{(input gate)}$$
-$$\tilde{C}_t = \tanh(W_C \cdot [h_{t-1}, x_t] + b_C) \quad \text{(candidate cell state)}$$
-$$C_t = f_t \odot C_{t-1} + i_t \odot \tilde{C}_t \quad \text{(cell state update)}$$
-$$o_t = \sigma(W_o \cdot [h_{t-1}, x_t] + b_o) \quad \text{(output gate)}$$
-$$h_t = o_t \odot \tanh(C_t) \quad \text{(hidden state)}$$
+```math
+f_t = \sigma(W_f \cdot [h_{t-1}, x_t] + b_f) \quad \text{(forget gate)}
+```
+```math
+i_t = \sigma(W_i \cdot [h_{t-1}, x_t] + b_i) \quad \text{(input gate)}
+```
+```math
+\tilde{C}_t = \tanh(W_C \cdot [h_{t-1}, x_t] + b_C) \quad \text{(candidate cell state)}
+```
+```math
+C_t = f_t \odot C_{t-1} + i_t \odot \tilde{C}_t \quad \text{(cell state update)}
+```
+```math
+o_t = \sigma(W_o \cdot [h_{t-1}, x_t] + b_o) \quad \text{(output gate)}
+```
+```math
+h_t = o_t \odot \tanh(C_t) \quad \text{(hidden state)}
+```
 
 Where $\sigma$ is the sigmoid function, $\odot$ is element-wise multiplication. The **forget gate** $f_t$ controls how much of the previous cell state to retain. This is what gives LSTM its ability to "remember" patterns from many steps ago — something a vanilla RNN cannot do due to the vanishing gradient problem.
 
@@ -597,11 +494,15 @@ Where $\sigma$ is the sigmoid function, $\odot$ is element-wise multiplication. 
 
 The LSTM never sees raw prices. Features are normalised per sequence:
 
-$$X_{\text{scaled}} = \frac{X - \mu_X}{\sigma_X}$$
+```math
+X_{\text{scaled}} = \frac{X - \mu_X}{\sigma_X}
+```
 
 And targets (next-day returns) are normalised:
 
-$$y_{\text{scaled}} = \frac{y - \mu_y}{\sigma_y}$$
+```math
+y_{\text{scaled}} = \frac{y - \mu_y}{\sigma_y}
+```
 
 This makes the model universally applicable across all tickers regardless of absolute price level, immune to stock splits, and prevents gradient explosion during backpropagation.
 
@@ -663,7 +564,9 @@ The 20-day rolling standard deviation of returns (`Volatility_20`) is a simple h
 
 ### 17.2 The GARCH(1,1) model
 
-$$\sigma_t^2 = \omega + \alpha \epsilon_{t-1}^2 + \beta \sigma_{t-1}^2$$
+```math
+\sigma_t^2 = \omega + \alpha \epsilon_{t-1}^2 + \beta \sigma_{t-1}^2
+```
 
 Where:
 - $\sigma_t^2$ is today's conditional variance
@@ -690,7 +593,9 @@ v = arch_model(rets, vol='Garch', p=1, q=1).fit(disp='off').conditional_volatili
 
 The Sharpe Ratio measures **risk-adjusted return** — how much return you earn per unit of total risk (standard deviation):
 
-$$\text{Sharpe} = \frac{E[R_{\text{strategy}}] - R_f}{\sigma_{\text{strategy}}} \cdot \sqrt{252}$$
+```math
+\text{Sharpe} = \frac{E[R_{\text{strategy}}] - R_f}{\sigma_{\text{strategy}}} \cdot \sqrt{252}
+```
 
 In our implementation, the risk-free rate $R_f$ is approximated as 0 (conservative). The annualisation factor $\sqrt{252}$ converts daily figures to annual. A Sharpe above 1.0 is generally considered good; above 2.0 is excellent.
 
@@ -704,9 +609,13 @@ The "strategy" return is the backtest strategy return: holding when the model pr
 
 The Sortino Ratio is a refinement of Sharpe that only penalises **downside** volatility:
 
-$$\text{Sortino} = \frac{E[R] - R_f}{\sigma_{\text{downside}}} \cdot \sqrt{252}$$
+```math
+\text{Sortino} = \frac{E[R] - R_f}{\sigma_{\text{downside}}} \cdot \sqrt{252}
+```
 
-$$\sigma_{\text{downside}} = \sqrt{\frac{1}{N} \sum_{r_t < 0} r_t^2}$$
+```math
+\sigma_{\text{downside}} = \sqrt{\frac{1}{N} \sum_{r_t < 0} r_t^2}
+```
 
 Only negative daily returns enter the denominator. This is more appropriate for assets with positively skewed return distributions (they should not be penalised for upside volatility).
 
@@ -717,7 +626,9 @@ sortino   = data['Daily_Return'].mean() * 252 / down_std
 
 ### 18.3 Historical VaR (Value at Risk)
 
-$$\text{VaR}_{95\%} = \text{Percentile}_{5\%}(\{r_1, r_2, \ldots, r_N\}) \times 100$$
+```math
+\text{VaR}_{95\%} = \text{Percentile}_{5\%}(\{r_1, r_2, \ldots, r_N\}) \times 100
+```
 
 This is the **Historical Simulation** method. It says: "In 95% of trading days historically, the loss did not exceed this percentage." A VaR of −2.1% means: on the worst 5% of days, this asset lost 2.1% or more.
 
@@ -727,7 +638,9 @@ Historical VaR requires no distributional assumption — it directly reads off t
 
 Maximum Drawdown (Max DD) measures the largest peak-to-trough decline in the strategy's equity curve:
 
-$$\text{MaxDD} = \min_t \left( \frac{\text{Equity}_t - \max_{s \leq t} \text{Equity}_s}{\max_{s \leq t} \text{Equity}_s} \right) \times 100$$
+```math
+\text{MaxDD} = \min_t \left( \frac{\text{Equity}_t - \max_{s \leq t} \text{Equity}_s}{\max_{s \leq t} \text{Equity}_s} \right) \times 100
+```
 
 Expressed as a percentage. A Max DD of −25% means: at the worst point, the portfolio had fallen 25% from its previous peak. This is often more psychologically relevant than volatility — it tells you the worst historical pain you would have experienced holding this strategy.
 
@@ -787,7 +700,9 @@ Academic research has shown that a simple long/short strategy — buying stocks 
 
 The 7-day projected return `pr` is computed from the XGBoost ghost path:
 
-$$pr = \frac{\text{GhostPrice}_7 - \text{Close}_{\text{today}}}{\text{Close}_{\text{today}}} \times 100$$
+```math
+pr = \frac{\text{GhostPrice}_7 - \text{Close}_{\text{today}}}{\text{Close}_{\text{today}}} \times 100
+```
 
 ```python
 if pr > 5 and sentiment > 0:   sig = "STRONG BUY 🟢"
@@ -830,7 +745,9 @@ The gate is deliberately conservative. False negatives (missing a real buy oppor
 
 A Systematic Investment Plan (SIP) is a fixed monthly investment. The future value is:
 
-$$FV = P \cdot \frac{(1 + r)^n - 1}{r} \cdot (1 + r)$$
+```math
+FV = P \cdot \frac{(1 + r)^n - 1}{r} \cdot (1 + r)
+```
 
 Where:
 - $P$ = monthly investment amount
@@ -842,7 +759,9 @@ Where:
 
 Inverting the formula to find $n$ given a target corpus $G$:
 
-$$n = \frac{\ln\!\left(1 + \frac{G \cdot r}{P \cdot (1 + r)}\right)}{\ln(1 + r)}$$
+```math
+n = \frac{\ln\!\left(1 + \frac{G \cdot r}{P \cdot (1 + r)}\right)}{\ln(1 + r)}
+```
 
 This tells you exactly how many months of a given SIP amount, at the ticker's own 5-year CAGR, are required to reach your target.
 
@@ -935,7 +854,9 @@ Run this in a dedicated terminal (or `tmux` session). It runs hundreds of trials
 
 Optuna uses the **TPE (Tree-structured Parzen Estimator)** algorithm. Instead of random search, it builds a probabilistic model of the relationship between hyperparameters and the objective function:
 
-$$\text{score} = \frac{p(x | \text{good trials})}{p(x | \text{bad trials})}$$
+```math
+\text{score} = \frac{p(x | \text{good trials})}{p(x | \text{bad trials})}
+```
 
 Where $p(x | \text{good})$ is a kernel density estimate of hyperparameter values that led to good results, and $p(x | \text{bad})$ is the same for bad results. New trials are proposed by maximising this ratio — sampling from regions known to produce good results.
 
@@ -1305,7 +1226,9 @@ Every cycle, the backend computes two R² scores:
 - **Train R²**: how well the model fits the first 60% of data (training set)
 - **Holdout R²**: how well it predicts the most recent 20% (data it never saw)
 
-$$\text{Overfit Score} = \frac{\text{Holdout } R^2}{\text{Train } R^2}$$
+```math
+\text{Overfit Score} = \frac{\text{Holdout } R^2}{\text{Train } R^2}
+```
 
 | Score | Interpretation |
 |---|---|
