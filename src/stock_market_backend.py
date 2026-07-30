@@ -689,6 +689,16 @@ def run_stock_market():
             with open(ASSET_FILE) as f: assets = json.load(f)
         except: time.sleep(60); continue
 
+        # ── Clear the ready flag BEFORE starting a new batch so the UI and boot
+        # ── script cannot see a stale flag from a prior cycle while data is
+        # ── mid-flight.  The flag is re-created only after ALL tickers finish.
+        ready_path = os.path.join(DATA_DIR, ".ready")
+        if os.path.exists(ready_path):
+            try:
+                os.remove(ready_path)
+            except Exception as _re:
+                print(f"[ready] Could not remove .ready flag: {_re}")
+
         ist = pytz.timezone('Asia/Kolkata')
         now = datetime.now(ist)
         is_weekend = now.weekday() >= 5
@@ -780,7 +790,10 @@ def run_stock_market():
             except Exception as _rev_err:
                 print(f"{YELLOW}[Hermes] Daily review error: {_rev_err}{RESET}")
 
-        open(os.path.join(DATA_DIR, ".ready"), "w").close()
+        # Write .ready with the current Unix timestamp so the boot script can
+        # detect stale flags left over from a crashed prior run.
+        with open(os.path.join(DATA_DIR, ".ready"), "w") as _rf:
+            _rf.write(str(time.time()))
         wait = 3600 if market_live else 1800
         print(f"\n{BOLD_GREEN}[{now.strftime('%H:%M:%S')}] Cycle complete. Next check in {wait//60}m.{RESET}")
         time.sleep(wait)

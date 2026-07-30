@@ -169,8 +169,21 @@ pkill -f stock_market_backend.py 2>/dev/null
 pkill -f stock_market_ui.py 2>/dev/null
 pkill -f uvicorn 2>/dev/null
 
-# Remove old ready flag to force UI to wait for fresh data
-rm -f "$BASE_DIR/data_lake/.ready"
+# Remove old ready flag to force UI to wait for fresh data.
+# If a prior run crashed mid-cycle the flag may be stale — delete it
+# unconditionally so the UI never starts before the new cycle finishes.
+if [ -f "$BASE_DIR/data_lake/.ready" ]; then
+    READY_TS=$(cat "$BASE_DIR/data_lake/.ready" 2>/dev/null)
+    NOW_TS=$(date +%s)
+    # bc may not be installed; use Python for arithmetic
+    READY_AGE=$("$BASE_DIR/stock_env/bin/python" -c "print(max(0, $NOW_TS - int(float('$READY_TS'))))" 2>/dev/null || echo 99999)
+    if [ -n "$READY_AGE" ] && [ "$READY_AGE" -gt 3600 ] 2>/dev/null; then
+        echo -e "\033[0;33m[Phase 1] .ready flag is ${READY_AGE}s old (stale). Deleting...\033[0m"
+    else
+        echo -e "\033[0;33m[Phase 1] Removing previous .ready flag to ensure fresh data sync.\033[0m"
+    fi
+    rm -f "$BASE_DIR/data_lake/.ready"
+fi
 
 # Create logs and data_lake directories
 mkdir -p "$BASE_DIR/logs"
@@ -258,7 +271,41 @@ except Exception:
     sleep 2
 done
 
-echo -e "\n\033[0;32m[Phase 2] All tickers compiled ✓\033[0m"
+echo -e "\n\033[0;32m[Phase 2] .ready flag detected. Verifying data integrity...\033[0m"
+
+# After the .ready flag exists, verify the DB actually contains ALL expected
+# tickers.  The backend writes .ready only after all tickers finish, but a
+# previous-cycle stale flag could race through; this double-check removes any
+# remaining ambiguity.
+VERIFIED=0
+for attempt in 1 2 3 4 5; do
+    sleep 2
+    DB_COUNT=$("$BASE_DIR/stock_env/bin/python" -c "
+import sqlite3
+try:
+    conn = sqlite3.connect('$DB_FILE')
+    count = conn.execute('SELECT COUNT(DISTINCT Ticker) FROM predictions').fetchone()[0]
+    print(count)
+except Exception:
+    print(0)
+" 2>/dev/null)
+    DB_COUNT=${DB_COUNT:-0}
+
+    if [ "$DB_COUNT" -ge "$TOTAL_TICKERS" ]; then
+        echo -e "\033[0;32m  ✓ All $TOTAL_TICKERS tickers verified in database ($DB_COUNT found)\033[0m"
+        VERIFIED=1
+        break
+    else
+        echo -e "\033[0;33m  [Retry $attempt/5] Database has $DB_COUNT/$TOTAL_TICKERS tickers — waiting...\033[0m"
+    fi
+done
+
+if [ $VERIFIED -eq 0 ]; then
+    echo -e "\033[0;31m[WARNING] Could not verify all tickers in database after retries.\033[0m"
+    echo -e "\033[0;33m  Some tickers may be missing. Launching UI anyway.\033[0m"
+fi
+
+echo -e "\033[0;32m[Phase 2] All tickers compiled ✓\033[0m"
 
 # ==========================================
 # PHASE 3: MODE SELECTION & UI LAUNCH

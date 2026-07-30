@@ -156,6 +156,52 @@ if os.path.exists(os.path.join(DATA_DIR, ".sync_lock")):
 st.title("🏦 Institutional Quant Terminal - Global")
 st.markdown("---")
 
+# --- DATA INTEGRITY GATE ---
+# Block the UI from rendering widgets until both the .ready flag exists AND
+# the predictions table has at least one row.  This prevents the "Failed to
+# load prediction JSON" error that occurs when the UI races ahead of the backend.
+def _check_db_ready() -> tuple[bool, int]:
+    """Return (is_ready: bool, row_count: int)."""
+    try:
+        ready_path = os.path.join(DATA_DIR, ".ready")
+        if not os.path.exists(ready_path):
+            return False, 0
+        conn = sqlite3.connect(DB_PATH)
+        count = conn.execute("SELECT COUNT(*) FROM predictions").fetchone()[0]
+        conn.close()
+        return count > 0, count
+    except Exception:
+        return False, 0
+
+_ready, _ready_count = _check_db_ready()
+if not _ready:
+    _total_env = int(os.environ.get("TOTAL_TICKERS", 0))
+    st.warning("⏳ Backend is still compiling predictions. This page will auto-refresh when ready.")
+    _prog_placeholder = st.empty()
+    _waited = False
+    for _i in range(30):         # wait up to 60 seconds, checking every 2 s
+        import time as _time
+        _time.sleep(2)
+        _ready, _ready_count = _check_db_ready()
+        _pct = int(_ready_count / _total_env * 100) if _total_env > 0 else 0
+        _prog_placeholder.info(
+            f"⏳ Compiling: {_ready_count}/{_total_env} tickers ({_pct}%) — auto-refreshing..."
+            if _total_env > 0 else
+            f"⏳ Compiling predictions ({_ready_count} so far)..."
+        )
+        if _ready:
+            _waited = True
+            break
+    if _ready:
+        st.success("✅ Data ready! Loading terminal...")
+        st.rerun()
+    else:
+        st.error(
+            "⏱️ Timeout: backend took longer than expected. "
+            "Check `logs/backend.log` for errors, or wait a moment and refresh manually."
+        )
+        st.stop()
+
 # --- LIVE PROGRESS BANNER ---
 # Shows how many tickers have been processed so far this cycle.
 try:
